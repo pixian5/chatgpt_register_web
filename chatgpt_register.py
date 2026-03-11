@@ -485,6 +485,29 @@ def _fetch_duckmail_domain(api_base: str, headers: dict, session, impersonate: O
     return ""
 
 
+def _try_fetch_mail_token(api_base: str, session, email: str, password: str,
+                          impersonate: Optional[str] = None, retries: int = 3) -> tuple:
+    token_res = None
+    for i in range(retries):
+        if i > 0:
+            time.sleep(0.6 * (i + 1))
+        token_payload = {"address": email, "password": password}
+        token_res = session.post(
+            f"{api_base}/token",
+            json=token_payload,
+            timeout=15,
+            impersonate=impersonate
+        )
+        if token_res.status_code == 200:
+            token_data = token_res.json()
+            mail_token = token_data.get("token")
+            if mail_token:
+                return mail_token, token_res
+        if token_res.status_code not in (401, 429, 500, 502, 503, 504):
+            break
+    return None, token_res
+
+
 def create_temp_email():
     """创建 DuckMail 临时邮箱，返回 (email, password, mail_token)"""
     global DUCKMAIL_DOMAIN
@@ -514,18 +537,11 @@ def create_temp_email():
             return None, res, None
 
         time.sleep(0.5)
-        token_payload = {"address": email, "password": password}
-        token_res = session.post(
-            f"{api_base}/token",
-            json=token_payload,
-            timeout=15,
-            impersonate="chrome131"
+        mail_token, token_res = _try_fetch_mail_token(
+            api_base, session, email, password, impersonate="chrome131"
         )
-        if token_res.status_code == 200:
-            token_data = token_res.json()
-            mail_token = token_data.get("token")
-            if mail_token:
-                return (email, password, mail_token), res, token_res
+        if mail_token:
+            return (email, password, mail_token), res, token_res
         return None, res, token_res
 
     try:
@@ -544,6 +560,10 @@ def create_temp_email():
 
         if res is None:
             raise Exception("创建邮箱失败: 无响应")
+        if res.status_code in (200, 201):
+            if token_res is None:
+                raise Exception("获取邮件 Token 失败: 无响应")
+            raise Exception(f"获取邮件 Token 失败: {token_res.status_code} - {token_res.text[:200]}")
         raise Exception(f"创建邮箱失败: {res.status_code} - {res.text[:200]}")
     except Exception as e:
         raise Exception(f"DuckMail 创建邮箱失败: {e}")
@@ -766,18 +786,11 @@ class ChatGPTRegister:
                 return None, res, None
 
             time.sleep(0.5)
-            token_payload = {"address": email, "password": password}
-            token_res = session.post(
-                f"{api_base}/token",
-                json=token_payload,
-                timeout=15,
-                impersonate=self.impersonate
+            mail_token, token_res = _try_fetch_mail_token(
+                api_base, session, email, password, impersonate=self.impersonate
             )
-            if token_res.status_code == 200:
-                token_data = token_res.json()
-                mail_token = token_data.get("token")
-                if mail_token:
-                    return (email, password, mail_token), res, token_res
+            if mail_token:
+                return (email, password, mail_token), res, token_res
             return None, res, token_res
 
         try:
@@ -796,6 +809,10 @@ class ChatGPTRegister:
 
             if res is None:
                 raise Exception("创建邮箱失败: 无响应")
+            if res.status_code in (200, 201):
+                if token_res is None:
+                    raise Exception("获取邮件 Token 失败: 无响应")
+                raise Exception(f"获取邮件 Token 失败: {token_res.status_code} - {token_res.text[:200]}")
             raise Exception(f"创建邮箱失败: {res.status_code} - {res.text[:200]}")
 
         except Exception as e:
