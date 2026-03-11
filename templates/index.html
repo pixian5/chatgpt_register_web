@@ -783,6 +783,9 @@ input:focus, select:focus {
             <span class="spinner"></span>
             <span id="running-msg" style="font-size:13px;color:var(--text-secondary)">处理中...</span>
           </div>
+          <div id="running-success" style="display:none;font-size:13px;color:var(--text-secondary);margin-top:6px">
+            注册成功账号数量：0
+          </div>
         </div>
 
     </div><!-- /手动补号卡片 -->
@@ -905,6 +908,7 @@ let _regWs  = null;
 let _daemonLocalTimer = null; // 每秒递减倒计时
 let _daemonPollTimer = null;  // 每5秒同步后端
 let _logBuffer = [];
+let _fillSuccessCount = 0;
 const LOG_BUFFER_MAX = 5000;
 
 // ════════════════════════════════════════════════════════════════
@@ -955,6 +959,24 @@ function _syncSavedConfig(d) {
 // ════════════════════════════════════════════════════════════════
 // 日志
 // ════════════════════════════════════════════════════════════════
+function _resetFillSuccess() {
+  _fillSuccessCount = 0;
+  const el = document.getElementById('running-success');
+  if (el) {
+    el.textContent = '注册成功账号数量：0';
+    el.style.display = 'none';
+  }
+}
+
+function _incFillSuccess() {
+  _fillSuccessCount += 1;
+  const el = document.getElementById('running-success');
+  if (el) {
+    el.textContent = `注册成功账号数量：${_fillSuccessCount}`;
+    el.style.display = '';
+  }
+}
+
 function appendLog(msg) {
   const box = document.getElementById('log-box');
   if (!box) return;
@@ -979,6 +1001,14 @@ function appendLog(msg) {
   line.textContent = msg;
   box.appendChild(line);
   box.scrollTop = box.scrollHeight;
+
+  if (_inspectState === 'running') {
+    const runningMsg = document.getElementById('running-msg');
+    if (runningMsg && runningMsg.textContent.includes('步骤 2/2') && msg.includes('注册成功')) {
+      _incFillSuccess();
+      refreshAccounts();
+    }
+  }
 }
 
 function clearLog() {
@@ -1403,6 +1433,7 @@ async function confirmFill() {
   const gap = _inspectResult.gap;
   if (gap <= 0) { resetInspect(); return; }
 
+  _resetFillSuccess();
   switchToLogs();
   const { base_url, token, target_type, target_count, proxy } = getPoolConfig();
 
@@ -1479,6 +1510,7 @@ async function _waitTaskIdle() {
 
 function resetInspect() {
   _inspectResult = null;
+  _resetFillSuccess();
   // 隐藏子元素，防止下次 show 时内容残留
   document.getElementById('inspect-no-gap').style.display   = 'none';
   document.getElementById('inspect-actions').style.display  = 'none';
