@@ -977,6 +977,10 @@ function setTab(tabName) {
   });
 }
 
+function switchToLogs() {
+  setTab('logs');
+}
+
 function initTabs() {
   const btns = document.querySelectorAll('.tab-btn');
   if (!btns.length) return;
@@ -1149,6 +1153,7 @@ async function saveSettings() {
 let _regOnlyPollTimer = null;
 
 function startRegOnly() {
+  switchToLogs();
   document.getElementById('regonly-idle').style.display = 'none';
   document.getElementById('regonly-input').style.display = 'block';
   document.getElementById('regonly-count').focus();
@@ -1161,6 +1166,7 @@ function cancelRegOnly() {
 
 async function confirmRegOnly() {
   const count = parseInt(document.getElementById('regonly-count').value) || 1;
+  switchToLogs();
   document.getElementById('regonly-input').style.display = 'none';
   document.getElementById('regonly-running').style.display = 'block';
   document.getElementById('regonly-progress').textContent = `注册中... 0/${count}`;
@@ -1336,6 +1342,7 @@ async function confirmFill() {
   const gap = _inspectResult.gap;
   if (gap <= 0) { resetInspect(); return; }
 
+  switchToLogs();
   const { base_url, token, target_type, target_count, proxy } = getPoolConfig();
 
   _showInspectPanel('running');
