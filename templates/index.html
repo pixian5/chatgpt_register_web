@@ -489,8 +489,8 @@ input:focus, select:focus {
 .accounts-table td { color: var(--text-primary); font-family: var(--font-mono); }
 .accounts-table tr:last-child td { border-bottom: none; }
 
-/* ─── Log Card fills remaining space ─── */
-#log-card {
+/* ─── Tabbed Panel (Accounts + Logs) ─── */
+#panel-card {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -498,7 +498,55 @@ input:focus, select:focus {
   overflow: hidden;
 }
 
-#log-card .card-header { flex-shrink: 0; }
+#panel-card .card-header { flex-shrink: 0; }
+
+.tab-bar {
+  display: flex;
+  gap: 6px;
+  background: rgba(60,60,67,0.10);
+  padding: 4px;
+  border-radius: 999px;
+}
+
+.tab-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.tab-btn.active { background: var(--blue); color: #fff; }
+
+.tab-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-panel { display: none; flex: 1; min-height: 0; }
+.tab-panel.active { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.panel-actions { display: flex; gap: 8px; }
 
 .log-box {
   background: #1a1a1a;
@@ -768,38 +816,47 @@ input:focus, select:focus {
 
     </div><!-- /top-row -->
 
-    <!-- 账号列表卡片 -->
-    <div class="card" id="accounts-card" style="flex-shrink:0">
+    <!-- 账号列表 + 实时日志（Tab） -->
+    <div class="card" id="panel-card">
       <div class="card-header">
-        <div class="card-title">账号列表</div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-sm btn-secondary" id="btn-refresh-accounts" onclick="refreshAccounts()">↻ 刷新</button>
-          <button class="btn btn-sm btn-secondary" id="btn-sync-accounts" onclick="doSync()">⇅ 同步</button>
+        <div class="card-title">账号 & 日志</div>
+        <div class="tab-bar">
+          <button class="tab-btn active" data-tab="accounts">账号列表</button>
+          <button class="tab-btn" data-tab="logs">实时日志</button>
         </div>
       </div>
-      <div id="accounts-body">
-        <div id="accounts-loading" style="display:none;color:var(--text-tertiary);font-size:13px">加载中...</div>
-        <div class="accounts-table-wrap" id="accounts-table-wrap" style="display:none">
-          <table class="accounts-table">
-            <thead><tr><th>#</th><th>账号名称</th><th>类型</th><th>状态</th><th>位置</th></tr></thead>
-            <tbody id="accounts-tbody"></tbody>
-          </table>
+      <div class="tab-content">
+        <div class="tab-panel active" id="tab-accounts">
+          <div class="panel-header">
+            <div class="panel-title">账号列表</div>
+            <div class="panel-actions">
+              <button class="btn btn-sm btn-secondary" id="btn-refresh-accounts" onclick="refreshAccounts()">↻ 刷新</button>
+              <button class="btn btn-sm btn-secondary" id="btn-sync-accounts" onclick="doSync()">⇅ 同步</button>
+            </div>
+          </div>
+          <div id="accounts-body">
+            <div id="accounts-loading" style="display:none;color:var(--text-tertiary);font-size:13px">加载中...</div>
+            <div class="accounts-table-wrap" id="accounts-table-wrap" style="display:none">
+              <table class="accounts-table">
+                <thead><tr><th>#</th><th>账号名称</th><th>类型</th><th>状态</th><th>位置</th></tr></thead>
+                <tbody id="accounts-tbody"></tbody>
+              </table>
+            </div>
+            <div id="accounts-empty" style="display:none;color:var(--text-tertiary);font-size:13px;padding:8px 0">暂无账号</div>
+          </div>
         </div>
-        <div id="accounts-empty" style="display:none;color:var(--text-tertiary);font-size:13px;padding:8px 0">暂无账号</div>
-      </div>
-    </div>
-
-    <!-- 实时日志卡片 -->
-    <div class="card" id="log-card">
-      <div class="card-header">
-        <div class="card-title">实时日志</div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-sm btn-secondary" onclick="copyLogs()">复制</button>
-          <button class="btn btn-sm btn-secondary" onclick="clearLog()">清空</button>
+        <div class="tab-panel" id="tab-logs">
+          <div class="panel-header">
+            <div class="panel-title">实时日志</div>
+            <div class="panel-actions">
+              <button class="btn btn-sm btn-secondary" onclick="copyLogs()">复制</button>
+              <button class="btn btn-sm btn-secondary" onclick="clearLog()">清空</button>
+            </div>
+          </div>
+          <div id="log-box" class="log-box">
+            <span class="log-placeholder">等待任务启动...</span>
+          </div>
         </div>
-      </div>
-      <div id="log-box" class="log-box">
-        <span class="log-placeholder">等待任务启动...</span>
       </div>
     </div>
 
@@ -906,6 +963,25 @@ async function copyLogs() {
       appendLog('[ERROR] 复制失败: ' + err);
     }
   }
+}
+
+function setTab(tabName) {
+  const btns = document.querySelectorAll('.tab-btn');
+  const panels = document.querySelectorAll('.tab-panel');
+  btns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  panels.forEach((panel) => {
+    panel.classList.toggle('active', panel.id === `tab-${tabName}`);
+  });
+}
+
+function initTabs() {
+  const btns = document.querySelectorAll('.tab-btn');
+  if (!btns.length) return;
+  btns.forEach((btn) => {
+    btn.addEventListener('click', () => setTab(btn.dataset.tab));
+  });
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1610,6 +1686,7 @@ async function doSync() {
 // 初始化
 // ════════════════════════════════════════════════════════════════
 (async function init() {
+  initTabs();
   await loadSettings();
   connectPoolWs();
 
