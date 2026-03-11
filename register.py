@@ -689,7 +689,44 @@ def _delete_invalid_accounts(
             return str(data)[:200]
         except Exception:
             text = resp.text if hasattr(resp, "text") else ""
-            return text[:200] if text else ""
+        return text[:200] if text else ""
+
+    def _build_attempts(file_id: str, name: str) -> list:
+        attempts = []
+        seen = set()
+
+        def add_attempt(label: str, url: str, params: Optional[dict] = None, json_body: Optional[dict] = None):
+            key = (
+                url,
+                tuple(sorted(params.items())) if isinstance(params, dict) else None,
+                tuple(sorted(json_body.items())) if isinstance(json_body, dict) else None,
+            )
+            if key in seen:
+                return
+            seen.add(key)
+            attempts.append((label, url, params, json_body))
+
+        if file_id:
+            fid = str(file_id)
+            add_attempt("id_path", f"{base}/v0/management/auth-files/{quote(fid, safe='')}")
+            add_attempt("id_query", f"{base}/v0/management/auth-files", {"id": fid})
+            add_attempt("id_json", f"{base}/v0/management/auth-files", json_body={"id": fid})
+
+        if name:
+            nm = str(name)
+            candidates = [(nm, "name")]
+            clean_name = _normalize_token_name(nm)
+            if clean_name and clean_name != nm:
+                candidates.append((clean_name, "name_no_ext"))
+
+            for val, tag in candidates:
+                add_attempt(f"{tag}_path", f"{base}/v0/management/auth-files/{quote(val, safe='')}")
+                add_attempt(f"{tag}_query", f"{base}/v0/management/auth-files", {"name": val})
+                add_attempt(f"{tag}_filename_query", f"{base}/v0/management/auth-files", {"filename": val})
+                add_attempt(f"{tag}_json", f"{base}/v0/management/auth-files", json_body={"name": val})
+                add_attempt(f"{tag}_filename_json", f"{base}/v0/management/auth-files", json_body={"filename": val})
+
+        return attempts
 
     def delete_one(item):
         nonlocal deleted, delete_fail
@@ -702,29 +739,28 @@ def _delete_invalid_accounts(
             log("[Pool] 删除失败: 空文件名")
             return
         try:
-            attempts = []
-            if file_id:
-                fid = str(file_id)
-                attempts.append(("id", f"{base}/v0/management/auth-files/{quote(fid, safe='')}"))
-                attempts.append(("id_query", f"{base}/v0/management/auth-files", {"id": fid}))
-            if name:
-                nm = str(name)
-                attempts.append(("name", f"{base}/v0/management/auth-files/{quote(nm, safe='')}"))
-                attempts.append(("name_query", f"{base}/v0/management/auth-files", {"name": nm}))
-                attempts.append(("filename_query", f"{base}/v0/management/auth-files", {"filename": nm}))
+            attempts = _build_attempts(file_id, name)
+            if not attempts:
+                with del_lock:
+                    delete_fail += 1
+                    fail_stats["EMPTY:attempts"] += 1
+                log(f"[Pool] 删除失败: {display_name} (无可用删除方式)")
+                return
 
             last_status: Optional[int] = None
             last_label = ""
-            last_detail = ""
-            for label, url, *rest in attempts:
-                params = rest[0] if rest else None
-                r = session.delete(url, headers=headers, timeout=timeout, params=params)
+            best_status: Optional[int] = None
+            best_label = ""
+            best_detail = ""
+
+            for label, url, params, json_body in attempts:
+                r = session.delete(url, headers=headers, timeout=timeout, params=params, json=json_body)
                 last_status = r.status_code
                 last_label = label
                 if r.status_code in (200, 204):
                     with del_lock:
                         deleted += 1
-                    log(f"[Pool] 删除成功: {display_name}")
+                    log(f"[Pool] 删除成功: {display_name} ({label})")
                     # 同步删除本地副本（根目录和 uploaded/）
                     clean_name = _normalize_token_name(name or display_name)
                     if clean_name:
@@ -741,15 +777,25 @@ def _delete_invalid_accounts(
                             else:
                                 log(f"[Pool] 本地不存在: {local_path}")
                     return
-                last_detail = _resp_detail(r)
-                if r.status_code not in (404, 405):
-                    break
 
+                detail = _resp_detail(r)
+                if best_status is None:
+                    best_status = r.status_code
+                    best_label = label
+                    best_detail = detail
+                elif best_status in (404, 405) and r.status_code not in (404, 405):
+                    best_status = r.status_code
+                    best_label = label
+                    best_detail = detail
+
+            final_status = best_status if best_status is not None else last_status
+            final_label = best_label or last_label
+            final_detail = best_detail
             with del_lock:
                 delete_fail += 1
-                fail_stats[f"{last_status}:{last_label}"] += 1
-            detail_suffix = f" {last_detail}" if last_detail else ""
-            log(f"[Pool] 删除失败: {display_name} ({last_status}, {last_label}){detail_suffix}")
+                fail_stats[f"{final_status}:{final_label}"] += 1
+            detail_suffix = f" {final_detail}" if final_detail else ""
+            log(f"[Pool] 删除失败: {display_name} ({final_status}, {final_label}){detail_suffix}")
         except Exception as e:
             with del_lock:
                 delete_fail += 1
