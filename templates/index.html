@@ -887,7 +887,7 @@ function fmtSec(s) {
 }
 
 // 已保存到服务端的配置（只在 loadSettings/saveSettings 成功后更新）
-let _savedConfig = { base_url: '', token: '', target_type: 'codex', target_count: 100, proxy: '' };
+let _savedConfig = { base_url: '', token: '', target_type: 'codex', target_count: 100, proxy: '', workers: 3 };
 
 function getPoolConfig() {
   return { ..._savedConfig };
@@ -901,6 +901,7 @@ function _syncSavedConfig(d) {
     target_type:  (d.pool && d.pool.target_type)   || 'codex',
     target_count: (d.pool && d.pool.target_count)  || 100,
     proxy:        d.proxy || '',
+    workers:      d.workers || 3,
   };
 }
 
@@ -1168,7 +1169,7 @@ async function confirmRegOnly() {
     const r = await fetch('/api/register/start', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ count }),
+      body: JSON.stringify({ count, workers: _savedConfig.workers || 3 }),
     });
     if (!r.ok) {
       const e = await r.json();

@@ -934,9 +934,10 @@ def run_pool_fill(
     if fill_count == 0:
         return {"success": 0, "fail": 0, "total": 0, "uploaded": pre_uploaded}
 
+    cfg_workers = int((config or {}).get("workers") or 3)
     result = run_batch_register(
         count=fill_count,
-        workers=min(3, fill_count),
+        workers=min(cfg_workers, fill_count),
         proxy=proxy or (config or {}).get("proxy", ""),
         stop_event=stop_event,
         log_cb=log_cb,
@@ -1257,9 +1258,10 @@ def run_pool_maintain_cycle(
 
             if gap > 0:
                 log(f"[Daemon] 开始注册 {gap} 个账号...")
+                cfg_workers = int((config or {}).get("workers") or 3)
                 reg_result = run_batch_register(
                     count=gap,
-                    workers=min(3, gap),
+                    workers=min(cfg_workers, gap),
                     proxy=proxy,
                     stop_event=stop_event,
                     log_cb=log_cb,

@@ -180,10 +180,10 @@ async def register_start(body: dict = Body(...)):
     if _reg_state["running"]:
         raise HTTPException(status_code=409, detail="已有注册任务运行中")
 
-    count = int(body.get("count", 1))
-    workers = int(body.get("workers", 3))
-    proxy = str(body.get("proxy", "")).strip()
     config = reg.load_config()
+    count = int(body.get("count", 1))
+    workers = int(body.get("workers") or config.get("workers") or 3)
+    proxy = str(body.get("proxy", "")).strip()
 
     # 重置状态
     _reg_state.update({
