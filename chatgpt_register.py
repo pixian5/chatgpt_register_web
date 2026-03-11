@@ -17,6 +17,8 @@ import traceback
 import secrets
 import hashlib
 import base64
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse, parse_qs, urlencode
 from typing import Optional
@@ -468,7 +470,7 @@ def _extract_duckmail_domains(data) -> list:
     return [d.strip().lstrip("@") for d in domains if d]
 
 
-def _fetch_duckmail_domain(api_base: str, headers: dict, session, impersonate: Optional[str] = None) -> str:
+def _fetch_duckmail_domains(api_base: str, headers: dict, session, impersonate: Optional[str] = None) -> list:
     try:
         resp = session.get(
             f"{api_base}/domains",
@@ -477,33 +479,129 @@ def _fetch_duckmail_domain(api_base: str, headers: dict, session, impersonate: O
             impersonate=impersonate
         )
         if resp.status_code == 200:
-            domains = _extract_duckmail_domains(resp.json())
-            if domains:
-                return domains[0]
+            return _extract_duckmail_domains(resp.json())
     except Exception:
-        return ""
+        return []
+    return []
+
+
+def _parse_timestamp(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        ts = float(value)
+        if ts > 1e12:
+            ts = ts / 1000.0
+        return ts
+    if isinstance(value, str):
+        v = value.strip()
+        if not v:
+            return None
+        try:
+            if v.endswith("Z"):
+                v = f"{v[:-1]}+00:00"
+            return datetime.fromisoformat(v).timestamp()
+        except Exception:
+            pass
+        try:
+            return parsedate_to_datetime(v).timestamp()
+        except Exception:
+            return None
+    return None
+
+
+def _message_field(msg: dict, keys: tuple) -> str:
+    for key in keys:
+        val = msg.get(key)
+        if not val:
+            continue
+        if isinstance(val, dict):
+            for sub_key in ("address", "email", "value", "name"):
+                sub_val = val.get(sub_key)
+                if sub_val:
+                    return str(sub_val)
+            continue
+        return str(val)
     return ""
 
 
+def _message_timestamp(msg: dict):
+    if not isinstance(msg, dict):
+        return None
+    for key in (
+        "createdAt", "created_at", "receivedAt", "received_at",
+        "sentAt", "sent_at", "date", "timestamp", "time",
+    ):
+        if key in msg:
+            ts = _parse_timestamp(msg.get(key))
+            if ts:
+                return ts
+    return None
+
+
+def _filter_messages(messages, since_ts: Optional[float] = None,
+                     subject_hint: Optional[str] = None,
+                     from_hint: Optional[str] = None,
+                     limit: Optional[int] = None):
+    result = []
+    subject_hint_l = subject_hint.lower() if subject_hint else None
+    from_hint_l = from_hint.lower() if from_hint else None
+
+    for msg in messages or []:
+        if not isinstance(msg, dict):
+            continue
+        ts = _message_timestamp(msg) or 0
+        if since_ts and ts and ts < since_ts:
+            continue
+        if subject_hint_l:
+            subject = _message_field(msg, ("subject", "title"))
+            if subject and subject_hint_l not in subject.lower():
+                continue
+        if from_hint_l:
+            from_addr = _message_field(msg, ("from", "fromAddress", "sender", "from_email", "fromEmail"))
+            if from_addr and from_hint_l not in from_addr.lower():
+                continue
+        result.append((ts, msg))
+
+    if result:
+        if any(ts for ts, _ in result):
+            result.sort(key=lambda x: x[0], reverse=True)
+        messages_out = [msg for _, msg in result]
+    else:
+        messages_out = list(messages or [])
+
+    if limit:
+        return messages_out[:limit]
+    return messages_out
+
+
 def _try_fetch_mail_token(api_base: str, session, email: str, password: str,
-                          impersonate: Optional[str] = None, retries: int = 3) -> tuple:
+                          impersonate: Optional[str] = None, retries: int = 6) -> tuple:
     token_res = None
     for i in range(retries):
         if i > 0:
-            time.sleep(0.6 * (i + 1))
-        token_payload = {"address": email, "password": password}
-        token_res = session.post(
-            f"{api_base}/token",
-            json=token_payload,
-            timeout=15,
-            impersonate=impersonate
-        )
-        if token_res.status_code == 200:
-            token_data = token_res.json()
-            mail_token = token_data.get("token")
-            if mail_token:
-                return mail_token, token_res
-        if token_res.status_code not in (401, 429, 500, 502, 503, 504):
+            time.sleep(0.6 * (2 ** (i - 1)))
+        payloads = [
+            {"address": email, "password": password},
+            {"email": email, "password": password},
+            {"username": email, "password": password},
+        ]
+        for token_payload in payloads:
+            token_res = session.post(
+                f"{api_base}/token",
+                json=token_payload,
+                timeout=15,
+                impersonate=impersonate
+            )
+            if token_res.status_code == 200:
+                token_data = token_res.json()
+                mail_token = token_data.get("token")
+                if mail_token:
+                    return mail_token, token_res
+            if token_res.status_code in (401, 404, 429, 500, 502, 503, 504):
+                continue
+            break
+        if token_res and token_res.status_code not in (401, 404, 429, 500, 502, 503, 504):
             break
     return None, token_res
 
@@ -536,7 +634,7 @@ def create_temp_email():
         if res.status_code not in [200, 201]:
             return None, res, None
 
-        time.sleep(0.5)
+        time.sleep(1.2)
         mail_token, token_res = _try_fetch_mail_token(
             api_base, session, email, password, impersonate="chrome131"
         )
@@ -545,18 +643,26 @@ def create_temp_email():
         return None, res, token_res
 
     try:
-        domain = DUCKMAIL_DOMAIN or "duckmail.sbs"
-        result, res, token_res = attempt_create(domain)
-        if result:
-            return result
+        preferred_domain = (DUCKMAIL_DOMAIN or "duckmail.sbs").strip().lstrip("@")
+        discovered_domains = _fetch_duckmail_domains(api_base, headers, session, impersonate="chrome131")
+        domains = [preferred_domain]
+        for d in discovered_domains:
+            d = str(d).strip().lstrip("@")
+            if d and d not in domains:
+                domains.append(d)
 
-        if res is not None and res.status_code == 403 and "Domain not found" in res.text:
-            alt_domain = _fetch_duckmail_domain(api_base, headers, session, impersonate="chrome131")
-            if alt_domain and alt_domain != domain:
-                DUCKMAIL_DOMAIN = alt_domain
-                result, res, token_res = attempt_create(alt_domain)
-                if result:
-                    return result
+        last_res = None
+        last_token_res = None
+        for domain in domains:
+            result, res, token_res = attempt_create(domain)
+            last_res, last_token_res = res, token_res
+            if result:
+                DUCKMAIL_DOMAIN = domain
+                return result
+            if res is not None and res.status_code == 403 and "domain not found" in res.text.lower():
+                continue
+        res = last_res
+        token_res = last_token_res
 
         if res is None:
             raise Exception("创建邮箱失败: 无响应")
@@ -641,25 +747,33 @@ def _extract_verification_code(email_content: str):
     return None
 
 
-def wait_for_verification_email(mail_token: str, timeout: int = 120):
+def wait_for_verification_email(mail_token: str, timeout: int = 120,
+                                since_ts: Optional[float] = None,
+                                subject_hint: Optional[str] = None,
+                                from_hint: Optional[str] = None):
     """等待并提取 OpenAI 验证码"""
     start_time = time.time()
+    since_ts = since_ts or start_time
 
     while time.time() - start_time < timeout:
-        messages = _fetch_emails_duckmail(mail_token)
-        if messages and len(messages) > 0:
-            # 获取最新邮件详情
-            first_msg = messages[0]
-            msg_id = first_msg.get("id") or first_msg.get("@id")
-
-            if msg_id:
-                detail = _fetch_email_detail_duckmail(mail_token, msg_id)
-                if detail:
-                    # DuckMail 的邮件内容在 text 或 html 字段
-                    content = detail.get("text") or detail.get("html") or ""
-                    code = _extract_verification_code(content)
-                    if code:
-                        return code
+        messages = _filter_messages(
+            _fetch_emails_duckmail(mail_token),
+            since_ts=since_ts,
+            subject_hint=subject_hint,
+            from_hint=from_hint,
+            limit=10,
+        )
+        for msg in messages:
+            msg_id = msg.get("id") or msg.get("@id")
+            if not msg_id:
+                continue
+            detail = _fetch_email_detail_duckmail(mail_token, msg_id)
+            if not detail:
+                continue
+            content = detail.get("text") or detail.get("html") or ""
+            code = _extract_verification_code(content)
+            if code:
+                return code
 
         time.sleep(3)
 
@@ -785,7 +899,7 @@ class ChatGPTRegister:
             if res.status_code not in [200, 201]:
                 return None, res, None
 
-            time.sleep(0.5)
+            time.sleep(1.2)
             mail_token, token_res = _try_fetch_mail_token(
                 api_base, session, email, password, impersonate=self.impersonate
             )
@@ -794,18 +908,26 @@ class ChatGPTRegister:
             return None, res, token_res
 
         try:
-            domain = DUCKMAIL_DOMAIN or "duckmail.sbs"
-            result, res, token_res = attempt_create(domain)
-            if result:
-                return result
+            preferred_domain = (DUCKMAIL_DOMAIN or "duckmail.sbs").strip().lstrip("@")
+            discovered_domains = _fetch_duckmail_domains(api_base, headers, session, impersonate=self.impersonate)
+            domains = [preferred_domain]
+            for d in discovered_domains:
+                d = str(d).strip().lstrip("@")
+                if d and d not in domains:
+                    domains.append(d)
 
-            if res is not None and res.status_code == 403 and "Domain not found" in res.text:
-                alt_domain = _fetch_duckmail_domain(api_base, headers, session, impersonate=self.impersonate)
-                if alt_domain and alt_domain != domain:
-                    DUCKMAIL_DOMAIN = alt_domain
-                    result, res, token_res = attempt_create(alt_domain)
-                    if result:
-                        return result
+            last_res = None
+            last_token_res = None
+            for domain in domains:
+                result, res, token_res = attempt_create(domain)
+                last_res, last_token_res = res, token_res
+                if result:
+                    DUCKMAIL_DOMAIN = domain
+                    return result
+                if res is not None and res.status_code == 403 and "domain not found" in res.text.lower():
+                    continue
+            res = last_res
+            token_res = last_token_res
 
             if res is None:
                 raise Exception("创建邮箱失败: 无响应")
@@ -885,25 +1007,35 @@ class ChatGPTRegister:
                 return code
         return None
 
-    def wait_for_verification_email(self, mail_token: str, timeout: int = 120):
+    def wait_for_verification_email(self, mail_token: str, timeout: int = 120,
+                                    since_ts: Optional[float] = None,
+                                    subject_hint: Optional[str] = None,
+                                    from_hint: Optional[str] = None):
         """等待并提取 OpenAI 验证码"""
         self._print(f"[OTP] 等待验证码邮件 (最多 {timeout}s)...")
         start_time = time.time()
+        since_ts = since_ts or start_time
 
         while time.time() - start_time < timeout:
-            messages = self._fetch_emails_duckmail(mail_token)
-            if messages and len(messages) > 0:
-                first_msg = messages[0]
-                msg_id = first_msg.get("id") or first_msg.get("@id")
-
-                if msg_id:
-                    detail = self._fetch_email_detail_duckmail(mail_token, msg_id)
-                    if detail:
-                        content = detail.get("text") or detail.get("html") or ""
-                        code = self._extract_verification_code(content)
-                        if code:
-                            self._print(f"[OTP] 验证码: {code}")
-                            return code
+            messages = _filter_messages(
+                self._fetch_emails_duckmail(mail_token),
+                since_ts=since_ts,
+                subject_hint=subject_hint,
+                from_hint=from_hint,
+                limit=10,
+            )
+            for msg in messages:
+                msg_id = msg.get("id") or msg.get("@id")
+                if not msg_id:
+                    continue
+                detail = self._fetch_email_detail_duckmail(mail_token, msg_id)
+                if not detail:
+                    continue
+                content = detail.get("text") or detail.get("html") or ""
+                code = self._extract_verification_code(content)
+                if code:
+                    self._print(f"[OTP] 验证码: {code}")
+                    return code
 
             elapsed = int(time.time() - start_time)
             self._print(f"[OTP] 等待中... ({elapsed}s/{timeout}s)")
@@ -1040,6 +1172,7 @@ class ChatGPTRegister:
         self._print(f"Authorize → {final_path}")
 
         need_otp = False
+        otp_since = None
 
         if "create-account/password" in final_path:
             self._print("全新注册流程")
@@ -1050,10 +1183,12 @@ class ChatGPTRegister:
             # register 之后可能还需要 send_otp（全新注册流程中 OTP 不一定在 authorize 时发送）
             _random_delay(0.3, 0.8)
             self.send_otp()
+            otp_since = time.time() - 2
             need_otp = True
         elif "email-verification" in final_path or "email-otp" in final_path:
             self._print("跳到 OTP 验证阶段 (authorize 已触发 OTP，不再重复发送)")
             # 不调用 send_otp()，因为 authorize 重定向到 email-verification 时服务器已发送 OTP
+            otp_since = time.time() - 10
             need_otp = True
         elif "about-you" in final_path:
             self._print("跳到填写信息阶段")
@@ -1069,11 +1204,12 @@ class ChatGPTRegister:
             self._print(f"未知跳转: {final_url}")
             self.register(email, password)
             self.send_otp()
+            otp_since = time.time() - 2
             need_otp = True
 
         if need_otp:
             # 使用 DuckMail 等待验证码
-            otp_code = self.wait_for_verification_email(mail_token)
+            otp_code = self.wait_for_verification_email(mail_token, since_ts=otp_since)
             if not otp_code:
                 raise Exception("未能获取验证码")
 
@@ -1082,8 +1218,9 @@ class ChatGPTRegister:
             if status != 200:
                 self._print("验证码失败，重试...")
                 self.send_otp()
+                otp_since = time.time() - 2
                 _random_delay(1.0, 2.0)
-                otp_code = self.wait_for_verification_email(mail_token, timeout=60)
+                otp_code = self.wait_for_verification_email(mail_token, timeout=60, since_ts=otp_since)
                 if not otp_code:
                     raise Exception("重试后仍未获取验证码")
                 _random_delay(0.3, 0.8)
@@ -1586,13 +1723,18 @@ class ChatGPTRegister:
             headers_otp = _oauth_json_headers(f"{OAUTH_ISSUER}/email-verification")
             tried_codes = set()
             otp_success = False
+            otp_since = time.time()
             otp_deadline = time.time() + 120
 
             while time.time() < otp_deadline and not otp_success:
-                messages = self._fetch_emails_duckmail(mail_token) or []
+                messages = _filter_messages(
+                    self._fetch_emails_duckmail(mail_token),
+                    since_ts=otp_since,
+                    limit=12,
+                )
                 candidate_codes = []
 
-                for msg in messages[:12]:
+                for msg in messages:
                     msg_id = msg.get("id") or msg.get("@id")
                     if not msg_id:
                         continue
