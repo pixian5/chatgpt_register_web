@@ -142,6 +142,8 @@ def _apply_config(mod, config: dict):
         mod.DUCKMAIL_BEARER = config["duckmail_bearer"]
     if "duckmail_api_base" in config:
         mod.DUCKMAIL_API_BASE = config["duckmail_api_base"].rstrip("/")
+    if "duckmail_domain" in config:
+        mod.DUCKMAIL_DOMAIN = str(config["duckmail_domain"]).strip().lstrip("@")
     if "enable_oauth" in config:
         mod.ENABLE_OAUTH = mod._as_bool(config["enable_oauth"])
     if "oauth_required" in config:
@@ -1037,6 +1039,7 @@ def load_config() -> dict:
     defaults = {
         "total_accounts": 3,
         "duckmail_api_base": "https://api.duckmail.sbs",
+        "duckmail_domain": "duckmail.sbs",
         "duckmail_bearer": "",
         "proxy": "",
         "output_file": "registered_accounts.txt",

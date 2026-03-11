@@ -559,6 +559,10 @@ input:focus, select:focus {
           <input type="url" id="cfg-duckmail-base" placeholder="https://api.duckmail.sbs">
         </div>
         <div class="field-group">
+          <label>Domain</label>
+          <input type="text" id="cfg-duckmail-domain" placeholder="duckmail.sbs">
+        </div>
+        <div class="field-group">
           <label>Bearer Token</label>
           <input type="password" id="cfg-duckmail-bearer" placeholder="dk_xxxxx">
         </div>
@@ -965,6 +969,7 @@ async function loadSettings() {
     const r = await fetch('/api/config');
     const d = await r.json();
     _setVal('cfg-duckmail-base', d.duckmail_api_base);
+    _setVal('cfg-duckmail-domain', d.duckmail_domain);
     _setVal('cfg-duckmail-bearer', d.duckmail_bearer);
     _setVal('cfg-proxy', d.proxy);
     _setVal('cfg-workers', d.workers || 3);
@@ -1002,6 +1007,7 @@ async function saveSettings() {
 
   const cfg = {
     duckmail_api_base: document.getElementById('cfg-duckmail-base').value.trim(),
+    duckmail_domain: document.getElementById('cfg-duckmail-domain').value.trim(),
     duckmail_bearer:   document.getElementById('cfg-duckmail-bearer').value.trim(),
     proxy:   document.getElementById('cfg-proxy').value.trim(),
     workers: parseInt(document.getElementById('cfg-workers').value) || 3,

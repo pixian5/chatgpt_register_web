@@ -1,0 +1,18 @@
+{
+  "duckmail_api_base": "https://api.duckmail.sbs",
+  "duckmail_bearer": "dk_015c53677aab8ba00a7e85eee6e2e456747941e37ba81a9de7f6df60289c5a41",
+  "proxy": "127.0.0.1:10808",
+  "workers": 3,
+  "oauth_issuer": "https://auth.openai.com",
+  "oauth_client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
+  "oauth_redirect_uri": "http://localhost:1455/auth/callback",
+  "enable_oauth": true,
+  "oauth_required": true,
+  "pool": {
+    "base_url": "https://rayai.zeabur.app",
+    "token": "REDACTED_TOKEN",
+    "target_type": "codex",
+    "target_count": 150,
+    "interval_min": 1
+  }
+}
