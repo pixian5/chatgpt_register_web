@@ -301,7 +301,8 @@ async def pool_probe(body: dict = Body(...)):
 
     def run_task():
         try:
-            result = reg.run_pool_probe(base_url, token, target_type, proxy, log_cb=log_cb)
+            cfg = reg.load_config()
+            result = reg.run_pool_probe(base_url, token, target_type, proxy, log_cb=log_cb, config=cfg)
             log_cb(f"[Pool] 探测结果: 总={result.get('total')}, 目标={result.get('target')}, 401={result.get('invalid_count')}")
         except Exception as e:
             log_cb(f"[ERROR] 探测异常: {e}")
@@ -498,9 +499,10 @@ async def pool_inspect(body: dict = Body(...)):
     log_cb = _make_pool_log_cb()
     log_cb("[Pool] 开始检查失效账号...")
     loop = asyncio.get_event_loop()
+    cfg = reg.load_config()
     result = await loop.run_in_executor(
         None,
-        lambda: reg.run_pool_probe(base_url, token, target_type, proxy, log_cb=log_cb),
+        lambda: reg.run_pool_probe(base_url, token, target_type, proxy, log_cb=log_cb, config=cfg),
     )
 
     if not result.get("ok"):
@@ -569,6 +571,8 @@ async def proxy_test(body: dict = Body(...)):
     proxies = body.get("proxies", [])
     target_url = body.get("target_url", "https://httpbin.org/ip")
     timeout = int(body.get("timeout", 5))
+    config = reg.load_config()
+    max_workers = int(body.get("workers") or config.get("proxy_test_workers") or 20)
 
     if not proxies:
         raise HTTPException(status_code=400, detail="proxies 不能为空")
@@ -577,7 +581,7 @@ async def proxy_test(body: dict = Body(...)):
 
     results = await asyncio.get_event_loop().run_in_executor(
         None,
-        lambda: reg.test_proxies_concurrent(proxies, target_url, timeout, max_workers=20),
+        lambda: reg.test_proxies_concurrent(proxies, target_url, timeout, max_workers=max_workers),
     )
     return {"ok": True, "results": results}
 

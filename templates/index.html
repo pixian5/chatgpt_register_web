@@ -627,6 +627,10 @@ input:focus, select:focus {
           <label>Token</label>
           <input type="password" id="cfg-pool-token" placeholder="Bearer Token">
         </div>
+        <div class="field-group">
+          <label>池代理（可选）</label>
+          <input type="text" id="cfg-pool-proxy" placeholder="127.0.0.1:10808">
+        </div>
         <div class="field-row">
           <div class="field-group">
             <label>账号类型</label>
@@ -652,6 +656,25 @@ input:focus, select:focus {
         </div>
       </div>
 
+      <!-- 高级配置 -->
+      <div class="settings-section">
+        <div class="section-label">高级配置</div>
+        <div class="field-row">
+          <div class="field-group">
+            <label>池探测并发</label>
+            <input type="number" id="cfg-pool-probe-workers" value="20" min="1" max="100">
+          </div>
+          <div class="field-group">
+            <label>池删除并发</label>
+            <input type="number" id="cfg-pool-delete-workers" value="10" min="1" max="100">
+          </div>
+        </div>
+        <div class="field-group">
+          <label>代理测试并发</label>
+          <input type="number" id="cfg-proxy-test-workers" value="20" min="1" max="100">
+        </div>
+      </div>
+
       <!-- OAuth 折叠 -->
       <div class="settings-section collapsible-section">
         <div class="collapsible-header" onclick="toggleOAuth()">
@@ -659,6 +682,14 @@ input:focus, select:focus {
           <span class="collapse-arrow" id="oauth-arrow">▸</span>
         </div>
         <div class="collapsible-body" id="oauth-body">
+          <div class="field-row">
+            <div class="field-group">
+              <label><input type="checkbox" id="cfg-oauth-enable" checked> 启用 OAuth</label>
+            </div>
+            <div class="field-group">
+              <label><input type="checkbox" id="cfg-oauth-required" checked> OAuth 必须成功</label>
+            </div>
+          </div>
           <div class="field-group">
             <label>Issuer URL</label>
             <input type="url" id="cfg-oauth-issuer" placeholder="https://auth.openai.com">
@@ -887,10 +918,22 @@ function fmtSec(s) {
 }
 
 // 已保存到服务端的配置（只在 loadSettings/saveSettings 成功后更新）
-let _savedConfig = { base_url: '', token: '', target_type: 'codex', target_count: 100, proxy: '', workers: 3 };
+let _savedConfig = {
+  base_url: '',
+  token: '',
+  target_type: 'codex',
+  target_count: 100,
+  proxy: '',
+  pool_proxy: '',
+  workers: 3,
+  pool_probe_workers: 20,
+  pool_delete_workers: 10,
+  proxy_test_workers: 20,
+};
 
 function getPoolConfig() {
-  return { ..._savedConfig };
+  const proxy = _savedConfig.pool_proxy || _savedConfig.proxy || '';
+  return { ..._savedConfig, proxy };
 }
 
 // 从服务端响应对象同步到 _savedConfig
@@ -901,7 +944,11 @@ function _syncSavedConfig(d) {
     target_type:  (d.pool && d.pool.target_type)   || 'codex',
     target_count: (d.pool && d.pool.target_count)  || 100,
     proxy:        d.proxy || '',
+    pool_proxy:   (d.pool && d.pool.proxy)         || '',
     workers:      d.workers || 3,
+    pool_probe_workers:  (d.pool && d.pool.probe_workers)  || 20,
+    pool_delete_workers: (d.pool && d.pool.delete_workers) || 10,
+    proxy_test_workers:  d.proxy_test_workers || 20,
   };
 }
 
@@ -1054,14 +1101,24 @@ async function loadSettings() {
     _setVal('cfg-duckmail-bearer', d.duckmail_bearer);
     _setVal('cfg-proxy', d.proxy);
     _setVal('cfg-workers', d.workers || 3);
+    _setVal('cfg-proxy-test-workers', d.proxy_test_workers || 20);
     _setVal('cfg-oauth-issuer', d.oauth_issuer);
     _setVal('cfg-oauth-client-id', d.oauth_client_id);
     _setVal('cfg-oauth-redirect', d.oauth_redirect_uri);
+    const enableOAuth = d.enable_oauth !== false;
+    const oauthRequired = d.oauth_required !== false;
+    const enableEl = document.getElementById('cfg-oauth-enable');
+    const requiredEl = document.getElementById('cfg-oauth-required');
+    if (enableEl) enableEl.checked = enableOAuth;
+    if (requiredEl) requiredEl.checked = oauthRequired;
     if (d.pool) {
       _setVal('cfg-pool-url', d.pool.base_url);
       _setVal('cfg-pool-token', d.pool.token);
       _setVal('cfg-pool-type', d.pool.target_type || 'codex');
       _setVal('cfg-pool-target', d.pool.target_count || 100);
+      _setVal('cfg-pool-proxy', d.pool.proxy || '');
+      _setVal('cfg-pool-probe-workers', d.pool.probe_workers || 20);
+      _setVal('cfg-pool-delete-workers', d.pool.delete_workers || 10);
     }
     // 同步守护进程间隔
     if (d.pool && d.pool.interval_min) {
@@ -1092,16 +1149,20 @@ async function saveSettings() {
     duckmail_bearer:   document.getElementById('cfg-duckmail-bearer').value.trim(),
     proxy:   document.getElementById('cfg-proxy').value.trim(),
     workers: parseInt(document.getElementById('cfg-workers').value) || 3,
+    proxy_test_workers: parseInt(document.getElementById('cfg-proxy-test-workers').value) || 20,
     oauth_issuer:      document.getElementById('cfg-oauth-issuer').value.trim(),
     oauth_client_id:   document.getElementById('cfg-oauth-client-id').value.trim(),
     oauth_redirect_uri: document.getElementById('cfg-oauth-redirect').value.trim(),
-    enable_oauth: true,
-    oauth_required: true,
+    enable_oauth: !!document.getElementById('cfg-oauth-enable')?.checked,
+    oauth_required: !!document.getElementById('cfg-oauth-required')?.checked,
     pool: {
       base_url:     document.getElementById('cfg-pool-url').value.trim(),
       token:        document.getElementById('cfg-pool-token').value.trim(),
       target_type:  document.getElementById('cfg-pool-type').value,
       target_count: parseInt(document.getElementById('cfg-pool-target').value) || 100,
+      proxy:        document.getElementById('cfg-pool-proxy').value.trim(),
+      probe_workers:  parseInt(document.getElementById('cfg-pool-probe-workers').value) || 20,
+      delete_workers: parseInt(document.getElementById('cfg-pool-delete-workers').value) || 10,
       interval_min: parseInt(document.getElementById('daemon-interval').value) || 30,
     },
   };

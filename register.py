@@ -521,6 +521,8 @@ def run_pool_probe(
     proxy: str = "",
     timeout: int = 10,
     log_cb: Optional[Callable[[str], None]] = None,
+    config: Optional[dict] = None,
+    max_workers: Optional[int] = None,
 ) -> dict:
     """探测账号池，找出 401 失效账号"""
 
@@ -611,7 +613,12 @@ def run_pool_probe(
                 if checked == 1 or checked % 20 == 0 or checked == len(target_files):
                     log(f"[Pool] 探测进度: {checked}/{len(target_files)}, 401={len(invalid_401)}")
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
+    if max_workers is None:
+        cfg = config or load_config()
+        max_workers = int((cfg.get("pool") or {}).get("probe_workers", 20))
+    max_workers = max(1, min(int(max_workers), max(1, len(target_files))))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
         list(ex.map(probe_one, target_files))
 
     log(f"[Pool] 探测完成: 401 失效 {len(invalid_401)} 个")
@@ -639,7 +646,15 @@ def run_pool_clean(
         if log_cb:
             log_cb(msg)
 
-    probe_result = run_pool_probe(base_url, token, target_type, proxy, timeout, log_cb)
+    probe_result = run_pool_probe(
+        base_url,
+        token,
+        target_type,
+        proxy,
+        timeout,
+        log_cb,
+        config=config,
+    )
     if not probe_result.get("ok"):
         return probe_result
 
@@ -804,7 +819,10 @@ def _delete_invalid_accounts(
                 fail_stats["EXC:request"] += 1
             log(f"[Pool] 删除异常: {display_name} - {e}")
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+    cfg = config or load_config()
+    max_workers = int((cfg.get("pool") or {}).get("delete_workers", 10))
+    max_workers = max(1, min(max_workers, max(1, len(invalid_401))))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
         list(ex.map(delete_one, invalid_401))
 
     if fail_stats:
@@ -1043,6 +1061,7 @@ def load_config() -> dict:
         "duckmail_domain": "duckmail.sbs",
         "duckmail_bearer": "",
         "proxy": "",
+        "workers": 3,
         "output_file": "registered_accounts.txt",
         "enable_oauth": True,
         "oauth_required": True,
@@ -1052,11 +1071,15 @@ def load_config() -> dict:
         "ak_file": "ak.txt",
         "rk_file": "rk.txt",
         "token_json_dir": "codex_tokens",
+        "proxy_test_workers": 20,
         "pool": {
             "base_url": "",
             "token": "",
             "target_type": "codex",
             "min_candidates": 100,
+            "proxy": "",
+            "probe_workers": 20,
+            "delete_workers": 10,
         },
     }
     if os.path.exists(cfg_path):
