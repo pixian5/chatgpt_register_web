@@ -1,7 +1,7 @@
 {
   "duckmail_api_base": "https://api.duckmail.sbs",
-  "duckmail_domain": "openai.xbz.email",
-  "duckmail_bearer": "dk_f95a0b5bdd766de0ef304d79a7e3295903e4312fbe72d06f9c9ad3ca13f17e14",
+  "duckmail_domain": "codex.sbbz.tech",
+  "duckmail_bearer": "dk_5f1845fdde2646c71b5270f164378d5ed20e03ed8084526c035c77c884bab4ce",
   "proxy": "",
   "workers": 3,
   "proxy_test_workers": 20,
@@ -11,10 +11,10 @@
   "enable_oauth": true,
   "oauth_required": true,
   "pool": {
-    "base_url": "https://dus.xbz.email:8317/",
+    "base_url": "https://or.sbbz.tech:52788/",
     "token": "1",
     "target_type": "codex",
-    "target_count": 70,
+    "target_count": 110,
     "proxy": "",
     "probe_workers": 30,
     "delete_workers": 10,
