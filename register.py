@@ -1,5 +1,5 @@
 """
-register.py - ChatGPT 注册机 Web UI 后端库
+register.py - pam管理 Web UI 后端库
 
 将 chatgpt_register.py 核心逻辑以 library 形式暴露：
 - log_callback: 替代 print，将日志路由到调用方

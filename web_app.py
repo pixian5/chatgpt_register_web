@@ -1,5 +1,5 @@
 """
-web_app.py - ChatGPT 注册机 Web UI 后端
+web_app.py - pam管理 Web UI 后端
 
 FastAPI 主程序：
 - REST API：配置、注册、账号池、代理、结果查看
@@ -33,7 +33,7 @@ import register as reg
 # 应用初始化
 # ============================================================
 
-app = FastAPI(title="ChatGPT 注册机 Web UI", version="1.0.0")
+app = FastAPI(title="pam管理 Web UI", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,

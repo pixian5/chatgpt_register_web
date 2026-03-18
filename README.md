@@ -1,4 +1,4 @@
-# ChatGPT 注册机 Web UI
+# pam管理 Web UI
 
 ## 启动流程
 

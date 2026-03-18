@@ -1,7 +1,7 @@
 """
-ChatGPT 批量自动注册工具 (并发版) - DuckMail 临时邮箱版
+pam管理 批量自动注册工具 (并发版) - DuckMail 临时邮箱版
 依赖: pip install curl_cffi
-功能: 使用 DuckMail 临时邮箱，并发自动注册 ChatGPT 账号，自动获取 OTP 验证码
+功能: 使用 DuckMail 临时邮箱，并发自动注册 pam管理 账号，自动获取 OTP 验证码
 """
 
 import os
@@ -1888,7 +1888,7 @@ def _register_one(idx, total, proxy, output_file):
         with _print_lock:
             print(f"\n{'='*60}")
             print(f"  [{idx}/{total}] 注册: {email}")
-            print(f"  ChatGPT密码: {chatgpt_password}")
+            print(f"  pam管理密码: {chatgpt_password}")
             print(f"  邮箱密码: {email_pwd}")
             print(f"  姓名: {name} | 生日: {birthdate}")
             print(f"{'='*60}")
@@ -1940,7 +1940,7 @@ def run_batch(total_accounts: int = 3, output_file="registered_accounts.txt",
 
     actual_workers = min(max_workers, total_accounts)
     print(f"\n{'#'*60}")
-    print(f"  ChatGPT 批量自动注册 (DuckMail 临时邮箱版)")
+    print(f"  pam管理 批量自动注册 (DuckMail 临时邮箱版)")
     print(f"  注册数量: {total_accounts} | 并发数: {actual_workers}")
     print(f"  DuckMail: {DUCKMAIL_API_BASE}")
     print(f"  OAuth: {'开启' if ENABLE_OAUTH else '关闭'} | required: {'是' if OAUTH_REQUIRED else '否'}")
@@ -1990,7 +1990,7 @@ def run_batch(total_accounts: int = 3, output_file="registered_accounts.txt",
 
 def main():
     print("=" * 60)
-    print("  ChatGPT 批量自动注册工具 (DuckMail 临时邮箱版)")
+    print("  pam管理 批量自动注册工具 (DuckMail 临时邮箱版)")
     print("=" * 60)
 
     # 检查 DuckMail 配置
