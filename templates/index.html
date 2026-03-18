@@ -769,12 +769,6 @@ input:focus, select:focus {
             <span class="result-item orange">缺口 <b id="res-gap">0</b></span>
           </div>
           <div id="inspect-no-gap" class="no-gap-msg" style="display:none">✓ 无需补号，池中账号充足</div>
-          <div id="inspect-actions" class="inspect-actions" style="display:none">
-            <button class="btn btn-success" id="btn-confirm-fill" onclick="confirmFill()">
-              确认补号 <span id="fill-count-badge">0</span> 个
-            </button>
-            <button class="btn btn-secondary" onclick="resetInspect()">取消</button>
-          </div>
         </div>
 
         <!-- running: 补号进行中 -->
@@ -1405,19 +1399,14 @@ async function startInspect() {
     document.getElementById('res-valid').textContent   = valid_count;
     document.getElementById('res-target').textContent  = target_count;
     document.getElementById('res-gap').textContent     = gap;
-    document.getElementById('fill-count-badge').textContent = gap;
-
     const noGapEl      = document.getElementById('inspect-no-gap');
-    const actionsEl    = document.getElementById('inspect-actions');
     if (gap === 0) {
       noGapEl.style.display   = '';
-      actionsEl.style.display = 'none';
       _showInspectPanel('inspected');
       // 3秒后自动回 idle
       setTimeout(resetInspect, 3000);
     } else {
       noGapEl.style.display   = 'none';
-      actionsEl.style.display = 'none';
       _showInspectPanel('inspected');
       appendLog('[Pool] 检测到缺口，自动开始补号...');
       await confirmFill();
