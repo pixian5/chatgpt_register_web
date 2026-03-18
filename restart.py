@@ -85,7 +85,7 @@ def _build():
 
 def _start():
     host = os.environ.get("HOST", "0.0.0.0")
-    port = os.environ.get("PORT", "8080")
+    port = os.environ.get("PORT", "52789")
     cmd = _uvicorn_cmd() + [
         "web_app:app",
         "--host", host,
