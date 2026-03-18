@@ -4,6 +4,7 @@
   "duckmail_bearer": "dk_f95a0b5bdd766de0ef304d79a7e3295903e4312fbe72d06f9c9ad3ca13f17e14",
   "proxy": "",
   "workers": 3,
+  "proxy_test_workers": 20,
   "oauth_issuer": "https://auth.openai.com",
   "oauth_client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
   "oauth_redirect_uri": "http://localhost:1455/auth/callback",
@@ -13,7 +14,10 @@
     "base_url": "https://dus.xbz.email:8317/",
     "token": "1",
     "target_type": "codex",
-    "target_count": 50,
+    "target_count": 70,
+    "proxy": "",
+    "probe_workers": 30,
+    "delete_workers": 10,
     "interval_min": 60
   }
 }
