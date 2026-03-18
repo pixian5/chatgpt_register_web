@@ -1372,7 +1372,8 @@ function _showInspectPanel(state) {
   _inspectState = state;
 }
 
-async function startInspect() {
+async function startInspect(options = {}) {
+  const autoFill = options.autoFill !== false;
   const { base_url, token, target_type, target_count, proxy } = getPoolConfig();
   if (!base_url || !token) {
     appendLog('[提示] 请先在左栏填写 CliProxyAPI URL 和 Token');
@@ -1415,8 +1416,10 @@ async function startInspect() {
     } else {
       if (noGapEl) noGapEl.style.display = 'none';
       _showInspectPanel('inspected');
-      appendLog('[Pool] 检测到缺口，自动开始补号...');
-      await confirmFill();
+      if (autoFill) {
+        appendLog('[Pool] 检测到缺口，自动开始补号...');
+        await confirmFill();
+      }
     }
 
     appendLog(`[Pool] 检查完成: 失效=${invalid_count}, 有效=${valid_count}, 缺口=${gap}`);
@@ -1487,6 +1490,7 @@ async function confirmFill() {
     appendLog('[Pool] 补号流程完成，刷新池状态...');
     await refreshPoolStatus();
     refreshAccounts();
+    await startInspect({ autoFill: false });
   } catch (e) {
     appendLog('[ERROR] 补号流程异常: ' + e);
   }
