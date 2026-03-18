@@ -974,6 +974,7 @@ function _incFillSuccess() {
 function appendLog(msg) {
   const box = document.getElementById('log-box');
   if (!box) return;
+  const shouldAutoScroll = (box.scrollHeight - box.scrollTop - box.clientHeight) <= 8;
   _logBuffer.push(msg);
   if (_logBuffer.length > LOG_BUFFER_MAX) _logBuffer.shift();
   // 清除占位符
@@ -994,7 +995,9 @@ function appendLog(msg) {
   }
   line.textContent = msg;
   box.appendChild(line);
-  box.scrollTop = box.scrollHeight;
+  if (shouldAutoScroll) {
+    box.scrollTop = box.scrollHeight;
+  }
 
   if (_inspectState === 'running') {
     const runningMsg = document.getElementById('running-msg');
