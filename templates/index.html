@@ -1361,10 +1361,14 @@ async function refreshPoolStatus() {
 // ════════════════════════════════════════════════════════════════
 function _showInspectPanel(state) {
   // state: 'idle' | 'inspecting' | 'inspected' | 'running'
-  document.getElementById('inspect-idle').style.display        = state === 'idle'       ? ''      : 'none';
-  document.getElementById('inspect-inspecting').style.display  = state === 'inspecting' ? ''      : 'none';
-  document.getElementById('inspect-inspected').style.display   = state === 'inspected'  ? ''      : 'none';
-  document.getElementById('inspect-running').style.display     = state === 'running'    ? ''      : 'none';
+  const idleEl = document.getElementById('inspect-idle');
+  const inspectingEl = document.getElementById('inspect-inspecting');
+  const inspectedEl = document.getElementById('inspect-inspected');
+  const runningEl = document.getElementById('inspect-running');
+  if (idleEl) idleEl.style.display = state === 'idle' ? '' : 'none';
+  if (inspectingEl) inspectingEl.style.display = state === 'inspecting' ? '' : 'none';
+  if (inspectedEl) inspectedEl.style.display = state === 'inspected' ? '' : 'none';
+  if (runningEl) runningEl.style.display = state === 'running' ? '' : 'none';
   _inspectState = state;
 }
 
@@ -1404,12 +1408,12 @@ async function startInspect() {
     document.getElementById('res-gap').textContent     = gap;
     const noGapEl      = document.getElementById('inspect-no-gap');
     if (gap === 0) {
-      noGapEl.style.display   = '';
+      if (noGapEl) noGapEl.style.display = '';
       _showInspectPanel('inspected');
       // 3秒后自动回 idle
       setTimeout(resetInspect, 3000);
     } else {
-      noGapEl.style.display   = 'none';
+      if (noGapEl) noGapEl.style.display = 'none';
       _showInspectPanel('inspected');
       appendLog('[Pool] 检测到缺口，自动开始补号...');
       await confirmFill();
