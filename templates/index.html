@@ -1510,8 +1510,8 @@ function resetInspect() {
   _inspectResult = null;
   _resetFillSuccess();
   // 隐藏子元素，防止下次 show 时内容残留
-  document.getElementById('inspect-no-gap').style.display   = 'none';
-  document.getElementById('inspect-actions').style.display  = 'none';
+  const noGapEl = document.getElementById('inspect-no-gap');
+  if (noGapEl) noGapEl.style.display = 'none';
   _showInspectPanel('idle');
 }
 
