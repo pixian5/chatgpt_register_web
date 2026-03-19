@@ -66,6 +66,8 @@ _reg_ws_clients: List[WebSocket] = []
 _pool_state: Dict[str, Any] = {
     "running": False,
     "task": "",
+    "stop_event": None,
+    "stop_requested": False,
 }
 _pool_log_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
 _pool_ws_clients: List[WebSocket] = []
@@ -388,6 +390,7 @@ async def pool_fill(body: dict = Body(...)):
 
     _pool_state["running"] = True
     _pool_state["task"] = "fill"
+    _pool_state["stop_requested"] = False
     log_cb = _make_pool_log_cb()
     stop_event = threading.Event()
     _pool_state["stop_event"] = stop_event
@@ -414,6 +417,8 @@ async def pool_fill(body: dict = Body(...)):
             log_cb(f"[ERROR] 补号异常: {e}")
         finally:
             _pool_state["running"] = False
+            _pool_state["task"] = ""
+            _pool_state["stop_requested"] = False
             _pool_state.pop("stop_event", None)
 
     threading.Thread(target=run_task, daemon=True).start()
@@ -481,7 +486,30 @@ async def pool_task_status():
     return {
         "running": _pool_state["running"],
         "task": _pool_state.get("task", ""),
+        "stop_requested": _pool_state.get("stop_requested", False),
     }
+
+
+@app.post("/api/pool/stop")
+async def pool_stop():
+    manual_stopped = False
+    daemon_stopped = False
+
+    manual_stop_event = _pool_state.get("stop_event")
+    if _pool_state.get("running") and _pool_state.get("task") == "fill" and manual_stop_event:
+        manual_stop_event.set()
+        _pool_state["stop_requested"] = True
+        manual_stopped = True
+        _make_pool_log_cb()("[Pool] 已请求停止当前补号任务")
+
+    daemon_stop_event = _pool_daemon.get("stop_event")
+    if _pool_daemon.get("running_now") and daemon_stop_event:
+        daemon_stop_event.set()
+        _pool_daemon["stop_requested"] = True
+        daemon_stopped = True
+        _make_pool_log_cb()("[Daemon] 已请求停止当前补号周期")
+
+    return {"ok": True, "manual_stopped": manual_stopped, "daemon_stopped": daemon_stopped}
 
 
 @app.post("/api/pool/inspect")
@@ -646,10 +674,12 @@ async def download_rk():
 
 _pool_daemon: Dict[str, Any] = {
     "enabled": False,
-    "interval_min": 30,
+    "interval_min": 200,
     "next_run_ts": None,
     "last_run_ts": None,
     "running_now": False,
+    "stop_event": None,
+    "stop_requested": False,
     "config": {},  # {base_url, token, target_type, target_count, proxy}
 }
 _pool_daemon_timer: Optional[threading.Timer] = None
@@ -663,11 +693,13 @@ def _run_daemon_once():
         return
 
     _pool_daemon["running_now"] = True
+    _pool_daemon["stop_requested"] = False
     log_cb = _make_pool_log_cb()
     try:
         cfg = _pool_daemon["config"]
         proxy = reg._proxy_pool.get_best(cfg.get("proxy", ""))
         stop_event = threading.Event()
+        _pool_daemon["stop_event"] = stop_event
         reg.run_pool_maintain_cycle(
             base_url=cfg.get("base_url", ""),
             token=cfg.get("token", ""),
@@ -682,6 +714,8 @@ def _run_daemon_once():
         log_cb(f"[Daemon] 执行异常: {e}")
     finally:
         _pool_daemon["running_now"] = False
+        _pool_daemon["stop_event"] = None
+        _pool_daemon["stop_requested"] = False
         _pool_daemon["last_run_ts"] = time.time()
         if _pool_daemon["enabled"]:
             interval_sec = _pool_daemon["interval_min"] * 60
@@ -708,6 +742,7 @@ async def pool_daemon_start(body: dict = Body(...)):
     _pool_daemon.update({
         "enabled": True,
         "interval_min": interval_min,
+        "stop_requested": False,
         "config": {
             "base_url": base_url,
             "token": token,
@@ -731,9 +766,13 @@ async def pool_daemon_stop():
 
     _pool_daemon["enabled"] = False
     _pool_daemon["next_run_ts"] = None
+    _pool_daemon["stop_requested"] = False
     if _pool_daemon_timer and _pool_daemon_timer.is_alive():
         _pool_daemon_timer.cancel()
         _pool_daemon_timer = None
+    stop_event = _pool_daemon.get("stop_event")
+    if stop_event:
+        stop_event.set()
 
     return {"ok": True}
 
@@ -750,6 +789,7 @@ async def pool_daemon_status():
         "next_run_ts": _pool_daemon["next_run_ts"],
         "last_run_ts": _pool_daemon["last_run_ts"],
         "remaining_sec": remaining,
+        "stop_requested": _pool_daemon["stop_requested"],
         "config": _pool_daemon["config"],
     }
 
@@ -774,9 +814,11 @@ async def pool_daemon_run_once(body: dict = Body(default={})):
 
     def run_task():
         _pool_daemon["running_now"] = True
+        _pool_daemon["stop_requested"] = False
         try:
             proxy = reg._proxy_pool.get_best(cfg.get("proxy", ""))
             stop_event = threading.Event()
+            _pool_daemon["stop_event"] = stop_event
             reg.run_pool_maintain_cycle(
                 base_url=cfg.get("base_url", ""),
                 token=cfg.get("token", ""),
@@ -791,6 +833,8 @@ async def pool_daemon_run_once(body: dict = Body(default={})):
             log_cb(f"[Daemon] 执行异常: {e}")
         finally:
             _pool_daemon["running_now"] = False
+            _pool_daemon["stop_event"] = None
+            _pool_daemon["stop_requested"] = False
             _pool_daemon["last_run_ts"] = time.time()
 
     threading.Thread(target=run_task, daemon=True).start()

@@ -994,6 +994,10 @@ def run_pool_fill(
     if fill_count == 0:
         return {"success": 0, "fail": 0, "total": 0, "uploaded": pre_uploaded}
 
+    if stop_event and stop_event.is_set():
+        log("[Pool] 已收到停止请求，取消补号")
+        return {"success": 0, "fail": 0, "total": fill_count, "uploaded": pre_uploaded}
+
     token_dir = (config or {}).get("token_json_dir", "codex_tokens")
     if not os.path.isabs(token_dir):
         token_dir = os.path.join(_BASE_DIR, token_dir)
@@ -1003,6 +1007,9 @@ def run_pool_fill(
     def upload_after_success(email: str):
         nonlocal uploaded_count
         if not base_url or not pool_token:
+            return
+        if stop_event and stop_event.is_set():
+            log(f"[Pool] 已停止，跳过上传: {email}.json")
             return
         status = _upload_token_file_to_pool(
             base_url=base_url,
@@ -1314,6 +1321,10 @@ def run_pool_maintain_cycle(
     deleted = clean_result.get("deleted", 0)
     log(f"[Daemon] 清理完成: 删除 {deleted} 个失效账号")
 
+    if stop_event and stop_event.is_set():
+        log("[Daemon] 已收到停止请求，结束本轮维护")
+        return {"ok": True, "valid_before": status["target"], "valid_after": status["target"] - deleted, "deleted": deleted, "registered": 0, "uploaded": 0, "gap": 0}
+
     # 3. 重新获取有效数量
     status_after = get_pool_status(base_url, token, target_type, proxy)
     valid_count = status_after.get("target", 0) if status_after.get("ok") else (status["target"] - deleted)
@@ -1331,6 +1342,18 @@ def run_pool_maintain_cycle(
             log("[Daemon] 先同步本地存量到远程...")
             sync_r = sync_local_remote(base_url, token, target_type, config, proxy, log_cb, target_count)
             pre_uploaded = sync_r.get("uploaded", 0)
+            if stop_event and stop_event.is_set():
+                log("[Daemon] 已收到停止请求，停止继续补号")
+                gap = max(0, gap)
+                return {
+                    "ok": True,
+                    "valid_before": status["target"],
+                    "valid_after": valid_count,
+                    "deleted": deleted,
+                    "registered": 0,
+                    "uploaded": uploaded,
+                    "gap": gap,
+                }
             if pre_uploaded > 0:
                 status_synced = get_pool_status(base_url, token, target_type, proxy)
                 valid_count = status_synced.get("target", valid_count) if status_synced.get("ok") else valid_count + pre_uploaded
@@ -1338,6 +1361,21 @@ def run_pool_maintain_cycle(
                 log(f"[Daemon] 存量上传 {pre_uploaded} 个，同步后有效账号: {valid_count}，剩余缺口: {gap}")
 
             if gap > 0:
+                if stop_event and stop_event.is_set():
+                    log("[Daemon] 已收到停止请求，取消注册")
+                    gap = 0
+                    registered = 0
+                    uploaded = pre_uploaded
+                    log(f"[Daemon] 维护周期完成: 删除={deleted}, 注册={registered}, 上传={uploaded}")
+                    return {
+                        "ok": True,
+                        "valid_before": status["target"],
+                        "valid_after": valid_count,
+                        "deleted": deleted,
+                        "registered": registered,
+                        "uploaded": uploaded,
+                        "gap": gap,
+                    }
                 log(f"[Daemon] 开始注册 {gap} 个账号...")
                 cfg_workers = int((config or {}).get("workers") or 3)
                 token_dir = (config or {}).get("token_json_dir", "codex_tokens")

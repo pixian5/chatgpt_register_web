@@ -877,6 +877,7 @@ input:focus, select:focus {
           <div class="panel-header">
             <div class="panel-title">实时日志</div>
             <div class="panel-actions">
+              <button class="btn btn-sm btn-secondary" id="btn-stop-pool" onclick="stopPoolFill()" disabled>停止补号</button>
               <button class="btn btn-sm btn-secondary" onclick="copyLogs()">复制</button>
               <button class="btn btn-sm btn-secondary" onclick="clearLog()">清空</button>
             </div>
@@ -901,9 +902,14 @@ let _poolWs = null;
 let _regWs  = null;
 let _daemonLocalTimer = null; // 每秒递减倒计时
 let _daemonPollTimer = null;  // 每5秒同步后端
+let _poolTaskPollTimer = null;
 let _logBuffer = [];
 let _fillSuccessCount = 0;
 let _poolRefreshTimer = null;
+let _poolTaskRunning = false;
+let _poolTaskName = '';
+let _daemonRunningNow = false;
+let _poolStopRequested = false;
 const LOG_BUFFER_MAX = 5000;
 
 // ════════════════════════════════════════════════════════════════
@@ -1053,6 +1059,28 @@ async function copyLogs() {
   }
 }
 
+async function stopPoolFill() {
+  const btn = document.getElementById('btn-stop-pool');
+  if (btn) btn.disabled = true;
+  _poolStopRequested = true;
+  try {
+    const r = await fetch('/api/pool/stop', { method: 'POST' });
+    const d = await r.json();
+    if (d.manual_stopped || d.daemon_stopped) {
+      appendLog('[Pool] 已发送停止补号请求');
+    } else if (_poolTaskRunning && _poolTaskName === 'clean') {
+      appendLog('[Pool] 已请求停止补号，当前清理结束后不会继续注册');
+    } else {
+      appendLog('[Pool] 当前没有可停止的补号任务');
+    }
+  } catch (e) {
+    appendLog('[ERROR] 停止补号失败: ' + e);
+  } finally {
+    pollPoolTaskStatus();
+    pollDaemonStatus();
+  }
+}
+
 function setTab(tabName) {
   const btns = document.querySelectorAll('.tab-btn');
   const panels = document.querySelectorAll('.tab-panel');
@@ -1066,6 +1094,13 @@ function setTab(tabName) {
 
 function switchToLogs() {
   setTab('logs');
+}
+
+function updateStopPoolButton() {
+  const btn = document.getElementById('btn-stop-pool');
+  if (!btn) return;
+  const active = (_poolTaskRunning && (_poolTaskName === 'fill' || _poolTaskName === 'clean')) || _daemonRunningNow;
+  btn.disabled = !active;
 }
 
 function initTabs() {
@@ -1387,6 +1422,7 @@ function _showInspectPanel(state) {
 
 async function startInspect(options = {}) {
   const autoFill = options.autoFill !== false;
+  _poolStopRequested = false;
   const { base_url, token, target_type, target_count, proxy } = getPoolConfig();
   if (!base_url || !token) {
     appendLog('[提示] 请先在左栏填写 CliProxyAPI URL 和 Token');
@@ -1446,6 +1482,7 @@ async function startInspect(options = {}) {
 
 async function confirmFill() {
   if (!_inspectResult) return;
+  _poolStopRequested = false;
   const gap = _inspectResult.gap;
   if (gap <= 0) { resetInspect(); return; }
 
@@ -1482,6 +1519,11 @@ async function confirmFill() {
 
     // 等待 clean 任务结束
     await _waitTaskIdle();
+    if (_poolStopRequested) {
+      appendLog('[Pool] 已停止补号，清理完成后不再继续注册');
+      resetInspect();
+      return;
+    }
 
     // 步骤2: 补号
     document.getElementById('running-msg').textContent = `步骤 2/2  补号中 (${gap} 个)...`;
@@ -1520,6 +1562,9 @@ async function _waitTaskIdle() {
     try {
       const r = await fetch('/api/pool/task-status');
       const d = await r.json();
+      _poolTaskRunning = !!d.running;
+      _poolTaskName = d.task || '';
+      updateStopPoolButton();
       if (!d.running) return;
     } catch {}
   }
@@ -1527,6 +1572,7 @@ async function _waitTaskIdle() {
 
 function resetInspect() {
   _inspectResult = null;
+  _poolStopRequested = false;
   _resetFillSuccess();
   // 隐藏子元素，防止下次 show 时内容残留
   const noGapEl = document.getElementById('inspect-no-gap');
@@ -1590,6 +1636,8 @@ async function pollDaemonStatus() {
   try {
     const r = await fetch('/api/pool/daemon/status');
     const d = await r.json();
+    _daemonRunningNow = !!d.running_now;
+    updateStopPoolButton();
     // 守护进程刚完成一轮 → 刷新列表和池状态
     if (_daemonWasRunning && !d.running_now) {
       refreshPoolStatus();
@@ -1597,6 +1645,16 @@ async function pollDaemonStatus() {
     }
     _daemonWasRunning = d.running_now;
     _updateDaemonUI(d);
+  } catch {}
+}
+
+async function pollPoolTaskStatus() {
+  try {
+    const r = await fetch('/api/pool/task-status');
+    const d = await r.json();
+    _poolTaskRunning = !!d.running;
+    _poolTaskName = d.task || '';
+    updateStopPoolButton();
   } catch {}
 }
 
@@ -1818,6 +1876,8 @@ async function doSync() {
   // 守护进程状态轮询
   pollDaemonStatus();
   _daemonPollTimer = setInterval(pollDaemonStatus, 5000);
+  pollPoolTaskStatus();
+  _poolTaskPollTimer = setInterval(pollPoolTaskStatus, 2000);
 })();
 </script>
 </body>
