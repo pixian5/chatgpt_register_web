@@ -90,6 +90,12 @@ _DEFAULT_POOL_RUNTIME_CONFIG: Dict[str, Any] = {
 async def _startup():
     global _event_loop
     _event_loop = asyncio.get_event_loop()
+    config = reg.load_config()
+    pool = config.get("pool", {})
+    base_url = str(pool.get("base_url", "")).strip()
+    token = str(pool.get("token", "")).strip()
+    if base_url and token:
+        _start_pool_daemon(pool)
 
 
 def _to_int(value: Any, fallback: int, minimum: Optional[int] = None) -> int:
@@ -726,6 +732,37 @@ _pool_daemon: Dict[str, Any] = {
 _pool_daemon_timer: Optional[threading.Timer] = None
 
 
+def _start_pool_daemon(source: Optional[dict] = None):
+    global _pool_daemon_timer
+
+    cfg = _normalize_pool_runtime_config(source, _pool_daemon["config"])
+    if not cfg["base_url"] or not cfg["token"]:
+        raise HTTPException(status_code=400, detail="base_url 和 token 不能为空")
+
+    # 停止旧 timer
+    if _pool_daemon_timer and _pool_daemon_timer.is_alive():
+        _pool_daemon_timer.cancel()
+
+    interval_min = _to_int(
+        (source or {}).get("interval_min"),
+        _pool_daemon["interval_min"],
+        minimum=1,
+    )
+    _pool_daemon.update({
+        "enabled": True,
+        "interval_min": interval_min,
+        "last_run_ts": time.time(),
+        "stop_requested": False,
+        "config": cfg,
+    })
+
+    # 立即执行一次（在后台线程）
+    _pool_daemon["next_run_ts"] = None
+    t = threading.Thread(target=_run_daemon_once, daemon=True)
+    t.start()
+    return interval_min
+
+
 def _run_daemon_once():
     """守护进程单次执行"""
     global _pool_daemon_timer
@@ -768,31 +805,7 @@ def _run_daemon_once():
 
 @app.post("/api/pool/daemon/start")
 async def pool_daemon_start(body: dict = Body(...)):
-    global _pool_daemon_timer
-
-    base_url = body.get("base_url", "").strip()
-    token = body.get("token", "").strip()
-    if not base_url or not token:
-        raise HTTPException(status_code=400, detail="base_url 和 token 不能为空")
-
-    # 停止旧 timer
-    if _pool_daemon_timer and _pool_daemon_timer.is_alive():
-        _pool_daemon_timer.cancel()
-
-    interval_min = _to_int(body.get("interval_min"), reg.DEFAULT_POOL_INTERVAL_MIN, minimum=1)
-    _pool_daemon.update({
-        "enabled": True,
-        "interval_min": interval_min,
-        "last_run_ts": time.time(),
-        "stop_requested": False,
-        "config": _normalize_pool_runtime_config(body),
-    })
-
-    # 立即执行一次（在后台线程）
-    _pool_daemon["next_run_ts"] = None
-    t = threading.Thread(target=_run_daemon_once, daemon=True)
-    t.start()
-
+    interval_min = _start_pool_daemon(body)
     return {"ok": True, "interval_min": interval_min}
 
 
