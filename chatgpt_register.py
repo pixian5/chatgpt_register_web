@@ -433,16 +433,23 @@ def _save_codex_tokens(email: str, tokens: dict):
     token_dir = TOKEN_JSON_DIR if os.path.isabs(TOKEN_JSON_DIR) else os.path.join(base_dir, TOKEN_JSON_DIR)
     os.makedirs(token_dir, exist_ok=True)
 
+    safe_email_name = str(email or "").strip().replace("/", "_").replace("\\", "_")
+    if not safe_email_name:
+        safe_email_name = _generate_time_based_name()
+
     token_path = None
     with _file_lock:
         while True:
-            token_name = now.strftime("%m%d%H%M%S")
+            token_name = safe_email_name
             candidate_path = os.path.join(token_dir, f"{token_name}.json")
             if not os.path.exists(candidate_path):
                 token_path = candidate_path
                 break
-            time.sleep(1)
-            now = datetime.now(tz=timezone(timedelta(hours=8)))
+            token_name = f"{safe_email_name}-{_generate_time_based_name()}"
+            candidate_path = os.path.join(token_dir, f"{token_name}.json")
+            if not os.path.exists(candidate_path):
+                token_path = candidate_path
+                break
 
         with open(token_path, "w", encoding="utf-8") as f:
             json.dump(token_data, f, ensure_ascii=False)
