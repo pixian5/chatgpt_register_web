@@ -674,7 +674,7 @@ async def download_rk():
 
 _pool_daemon: Dict[str, Any] = {
     "enabled": False,
-    "interval_min": 200,
+    "interval_min": 30,
     "next_run_ts": None,
     "last_run_ts": None,
     "running_now": False,

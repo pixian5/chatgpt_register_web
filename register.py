@@ -1146,7 +1146,7 @@ def load_config() -> dict:
             "proxy": "",
             "probe_workers": 20,
             "delete_workers": 10,
-            "interval_min": 200,
+            "interval_min": 30,
         },
     }
     if os.path.exists(cfg_path):

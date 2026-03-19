@@ -817,7 +817,7 @@ input:focus, select:focus {
             <span class="daemon-status-text" id="daemon-status-label">已停止</span>
           </div>
           <div class="daemon-interval-wrap">
-            每 <input type="number" id="daemon-interval" value="200" min="1"> 分钟执行一次
+            每 <input type="number" id="daemon-interval" value="30" min="1"> 分钟执行一次
           </div>
         </div>
         <div id="daemon-countdown-row" class="countdown-bar" style="display:none">
@@ -1233,7 +1233,7 @@ async function loadSettings() {
     }
     // 同步守护进程间隔
     if (d.pool && d.pool.interval_min) {
-      _setVal('daemon-interval', d.pool.interval_min || 200);
+      _setVal('daemon-interval', d.pool.interval_min || 30);
     }
     // 同步已保存配置（供 getPoolConfig() 使用）
     _syncSavedConfig(d);
@@ -1274,7 +1274,7 @@ async function saveSettings() {
       proxy:        document.getElementById('cfg-pool-proxy').value.trim(),
       probe_workers:  parseInt(document.getElementById('cfg-pool-probe-workers').value) || 20,
       delete_workers: parseInt(document.getElementById('cfg-pool-delete-workers').value) || 10,
-      interval_min: parseInt(document.getElementById('daemon-interval').value) || 200,
+      interval_min: parseInt(document.getElementById('daemon-interval').value) || 30,
     },
   };
 
@@ -1639,7 +1639,7 @@ async function startDaemon() {
     appendLog('[提示] 请先在左栏填写 CliProxyAPI URL 和 Token');
     return;
   }
-  const interval_min = parseInt(document.getElementById('daemon-interval').value) || 200;
+  const interval_min = parseInt(document.getElementById('daemon-interval').value) || 30;
 
   try {
     const r = await fetch('/api/pool/daemon/start', {
