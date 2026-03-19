@@ -104,6 +104,23 @@ if not DUCKMAIL_BEARER:
 # 全局线程锁
 _print_lock = threading.Lock()
 _file_lock = threading.Lock()
+_time_name_lock = threading.Lock()
+_time_name_base = ""
+_time_name_seq = 0
+
+
+def _generate_time_based_name() -> str:
+    """生成基于当前时间的名称，默认格式为月日时分秒；同秒并发时自动追加序号。"""
+    global _time_name_base, _time_name_seq
+
+    base = datetime.now().strftime("%m%d%H%M%S")
+    with _time_name_lock:
+        if base != _time_name_base:
+            _time_name_base = base
+            _time_name_seq = 0
+            return base
+        _time_name_seq += 1
+        return f"{base}{_time_name_seq}"
 
 
 # Chrome 指纹配置: impersonate 与 sec-ch-ua 必须匹配真实浏览器
@@ -623,15 +640,12 @@ def create_temp_email():
     if not DUCKMAIL_BEARER:
         raise Exception("DUCKMAIL_BEARER 未设置，无法创建临时邮箱")
 
-    # 生成随机邮箱前缀 8-13 位
-    chars = string.ascii_lowercase + string.digits
     api_base = DUCKMAIL_API_BASE.rstrip("/")
     headers = {"Authorization": f"Bearer {DUCKMAIL_BEARER}"}
     session = _create_duckmail_session()
 
     def attempt_create(domain: str):
-        length = random.randint(8, 13)
-        email_local = "".join(random.choice(chars) for _ in range(length))
+        email_local = _generate_time_based_name()
         email = f"{email_local}@{domain}"
         password = _generate_password()
         payload = {"address": email, "password": password}
@@ -904,15 +918,12 @@ class ChatGPTRegister:
         if not DUCKMAIL_BEARER:
             raise Exception("DUCKMAIL_BEARER 未设置，无法创建临时邮箱")
 
-        # 生成随机邮箱前缀 8-13 位
-        chars = string.ascii_lowercase + string.digits
         api_base = DUCKMAIL_API_BASE.rstrip("/")
         headers = {"Authorization": f"Bearer {DUCKMAIL_BEARER}"}
         session = self._create_duckmail_session()
 
         def attempt_create(domain: str):
-            length = random.randint(8, 13)
-            email_local = "".join(random.choice(chars) for _ in range(length))
+            email_local = _generate_time_based_name()
             email = f"{email_local}@{domain}"
             password = _generate_password()
             payload = {"address": email, "password": password}
