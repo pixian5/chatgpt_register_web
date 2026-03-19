@@ -473,7 +473,13 @@ input:focus, select:focus {
 .maint-card { flex: 1; min-width: 160px; }
 
 /* ─── Accounts List ─── */
-.accounts-table-wrap { overflow-x: auto; overflow-y: auto; max-height: 300px; margin-top: 8px; }
+.accounts-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+  margin-top: 8px;
+}
 .accounts-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .accounts-table thead th {
   position: sticky; top: 0;
@@ -499,6 +505,7 @@ input:focus, select:focus {
 }
 
 #panel-card .card-header { flex-shrink: 0; }
+#panel-card .tab-content { min-height: 0; }
 
 .tab-bar {
   display: flex;
@@ -531,6 +538,18 @@ input:focus, select:focus {
 
 .tab-panel { display: none; flex: 1; min-height: 0; }
 .tab-panel.active { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+
+#tab-accounts,
+#tab-logs {
+  min-height: 0;
+}
+
+#accounts-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 
 .panel-header {
   display: flex;
