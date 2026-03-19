@@ -846,6 +846,8 @@ def _delete_invalid_accounts(
                     # 同步删除本地副本（根目录和 uploaded/）
                     clean_name = _normalize_token_name(name or display_name)
                     if clean_name:
+                        local_deleted_paths = []
+                        local_missing_paths = []
                         for local_path in [
                             os.path.join(token_dir, f"{clean_name}.json"),
                             os.path.join(uploaded_dir, f"{clean_name}.json"),
@@ -853,11 +855,15 @@ def _delete_invalid_accounts(
                             if os.path.isfile(local_path):
                                 try:
                                     os.remove(local_path)
-                                    log(f"[Pool] 本地删除成功: {local_path}")
+                                    local_deleted_paths.append(local_path)
                                 except Exception as ex:
                                     log(f"[Pool] 本地删除失败: {local_path} - {ex}")
                             else:
+                                local_missing_paths.append(local_path)
                                 log(f"[Pool] 本地不存在: {local_path}")
+                        if not local_missing_paths:
+                            for local_path in local_deleted_paths:
+                                log(f"[Pool] 本地删除成功: {local_path}")
                     return
 
                 detail = _resp_detail(r)
