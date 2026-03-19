@@ -1305,8 +1305,7 @@ let _sharedRegStatsMode = '';
 let _sharedRegSuccessCount = 0;
 let _sharedRegFailCount = 0;
 let _poolLogSeq = 0;
-let _poolWsRetryCount = 0;
-let _poolWsOpenedAtLeastOnce = false;
+let _poolLogTransport = 'init';
 const LOG_BUFFER_MAX = 5000;
 const APP_DEFAULTS = Object.freeze({
   target_type: 'codex',
@@ -1678,10 +1677,10 @@ function connectPoolWs() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   _poolWs = new WebSocket(`${proto}://${location.host}/ws/pool/logs`);
   _poolWs.onopen = () => {
-    _poolWsRetryCount = 0;
-    _poolWsOpenedAtLeastOnce = true;
+    const wasPolling = _poolLogTransport === 'poll';
+    _poolLogTransport = 'ws';
     _stopPoolLogPolling();
-    appendLog('[WS] 池日志连接已建立');
+    appendLog(wasPolling ? '[日志] 池日志已恢复实时连接' : '[WS] 池日志连接已建立');
   };
   _poolWs.onmessage = (e) => {
     try {
@@ -1689,12 +1688,15 @@ function connectPoolWs() {
       if (d.type === 'log') _consumePoolLogEntry(d);
     } catch {}
   };
-  _poolWs.onerror = () => appendLog('[WS] 池日志连接异常');
+  _poolWs.onerror = () => {};
   _poolWs.onclose = () => {
     _poolWs = null;
-    _poolWsRetryCount += 1;
+    const firstSwitchToPolling = _poolLogTransport !== 'poll';
+    _poolLogTransport = 'poll';
     startPoolLogPolling(true);
-    appendLog('[WS] 池日志连接断开，已切换轮询并继续尝试重连');
+    if (firstSwitchToPolling) {
+      appendLog('[日志] 池日志已切换到兼容模式');
+    }
     // 断线重连
     setTimeout(connectPoolWs, 3000);
   };
