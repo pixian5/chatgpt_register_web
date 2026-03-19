@@ -1293,6 +1293,7 @@ let _regWs  = null;
 let _daemonLocalTimer = null; // 每秒递减倒计时
 let _daemonPollTimer = null;  // 每5秒同步后端
 let _poolTaskPollTimer = null;
+let _poolLogPollTimer = null;
 let _logBuffer = [];
 let _fillSuccessCount = 0;
 let _poolRefreshTimer = null;
@@ -1303,6 +1304,9 @@ let _poolStopRequested = false;
 let _sharedRegStatsMode = '';
 let _sharedRegSuccessCount = 0;
 let _sharedRegFailCount = 0;
+let _poolLogSeq = 0;
+let _poolWsRetryCount = 0;
+let _poolWsOpenedAtLeastOnce = false;
 const LOG_BUFFER_MAX = 5000;
 const APP_DEFAULTS = Object.freeze({
   target_type: 'codex',
@@ -1628,24 +1632,69 @@ function initTabs() {
   });
 }
 
+function _consumePoolLogEntry(entry) {
+  if (!entry || !entry.msg) return;
+  const seq = Number(entry.seq || 0);
+  if (seq > _poolLogSeq) _poolLogSeq = seq;
+  appendLog(entry.msg);
+}
+
+function _stopPoolLogPolling() {
+  if (_poolLogPollTimer) {
+    clearInterval(_poolLogPollTimer);
+    _poolLogPollTimer = null;
+  }
+}
+
+async function pollPoolLogsOnce(silent = false) {
+  try {
+    const params = new URLSearchParams({
+      after: String(_poolLogSeq || 0),
+      limit: '200',
+    });
+    const r = await fetch('/api/pool/logs?' + params.toString(), { cache: 'no-store' });
+    const d = await r.json();
+    if (!d.ok) return;
+    (d.items || []).forEach(_consumePoolLogEntry);
+    if (Number(d.last_seq || 0) > _poolLogSeq) _poolLogSeq = Number(d.last_seq || 0);
+  } catch (e) {
+    if (!silent) appendLog('[WS] 池日志轮询失败: ' + e);
+  }
+}
+
+function startPoolLogPolling(silent = false) {
+  if (_poolLogPollTimer) return;
+  pollPoolLogsOnce(silent);
+  _poolLogPollTimer = setInterval(() => {
+    pollPoolLogsOnce(true);
+  }, 2000);
+}
+
 // ════════════════════════════════════════════════════════════════
 // WebSocket 连接
 // ════════════════════════════════════════════════════════════════
 function connectPoolWs() {
-  if (_poolWs && _poolWs.readyState === WebSocket.OPEN) return;
+  if (_poolWs && _poolWs.readyState <= WebSocket.OPEN) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   _poolWs = new WebSocket(`${proto}://${location.host}/ws/pool/logs`);
-  _poolWs.onopen = () => appendLog('[WS] 池日志连接已建立');
+  _poolWs.onopen = () => {
+    _poolWsRetryCount = 0;
+    _poolWsOpenedAtLeastOnce = true;
+    _stopPoolLogPolling();
+    appendLog('[WS] 池日志连接已建立');
+  };
   _poolWs.onmessage = (e) => {
     try {
       const d = JSON.parse(e.data);
-      if (d.type === 'log') appendLog(d.msg);
+      if (d.type === 'log') _consumePoolLogEntry(d);
     } catch {}
   };
   _poolWs.onerror = () => appendLog('[WS] 池日志连接异常');
   _poolWs.onclose = () => {
     _poolWs = null;
-    appendLog('[WS] 池日志连接断开，3秒后重连');
+    _poolWsRetryCount += 1;
+    startPoolLogPolling(true);
+    appendLog('[WS] 池日志连接断开，已切换轮询并继续尝试重连');
     // 断线重连
     setTimeout(connectPoolWs, 3000);
   };
@@ -2434,6 +2483,7 @@ async function doSync() {
     if (e.key === 'Escape') closeSettingsDrawer();
   });
   await loadSettings();
+  await pollPoolLogsOnce(true);
   connectPoolWs();
 
   // 初次刷新池状态

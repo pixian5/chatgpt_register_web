@@ -71,6 +71,10 @@ _pool_state: Dict[str, Any] = {
 }
 _pool_log_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
 _pool_ws_clients: List[WebSocket] = []
+_POOL_LOG_HISTORY_MAX = 500
+_pool_log_history: List[Dict[str, Any]] = []
+_pool_log_seq = 0
+_pool_log_lock = threading.Lock()
 
 _PROBE_RESULT_TTL_SEC = 120
 
@@ -143,8 +147,19 @@ def _make_reg_log_cb():
     return lambda msg: _push_log_sync(_reg_log_queue, msg)
 
 
+def _push_pool_log_sync(msg: str):
+    global _pool_log_seq
+    with _pool_log_lock:
+        _pool_log_seq += 1
+        entry = {"seq": _pool_log_seq, "msg": str(msg)}
+        _pool_log_history.append(entry)
+        if len(_pool_log_history) > _POOL_LOG_HISTORY_MAX:
+            del _pool_log_history[:-_POOL_LOG_HISTORY_MAX]
+    _push_log_sync(_pool_log_queue, json.dumps(entry, ensure_ascii=False))
+
+
 def _make_pool_log_cb():
-    return lambda msg: _push_log_sync(_pool_log_queue, msg)
+    return _push_pool_log_sync
 
 
 def _token_fingerprint(token: str) -> str:
@@ -609,10 +624,14 @@ async def ws_pool_logs(ws: WebSocket):
     try:
         while True:
             try:
-                msg = await asyncio.wait_for(_pool_log_queue.get(), timeout=1.0)
+                raw = await asyncio.wait_for(_pool_log_queue.get(), timeout=1.0)
+                try:
+                    payload = json.loads(raw)
+                except Exception:
+                    payload = {"seq": None, "msg": str(raw)}
                 for client in list(_pool_ws_clients):
                     try:
-                        await client.send_text(json.dumps({"type": "log", "msg": msg}))
+                        await client.send_text(json.dumps({"type": "log", **payload}, ensure_ascii=False))
                     except Exception:
                         pass
             except asyncio.TimeoutError:
@@ -625,6 +644,18 @@ async def ws_pool_logs(ws: WebSocket):
     finally:
         if ws in _pool_ws_clients:
             _pool_ws_clients.remove(ws)
+
+
+@app.get("/api/pool/logs")
+async def pool_logs(after: int = 0, limit: int = 200):
+    limit = max(1, min(int(limit), _POOL_LOG_HISTORY_MAX))
+    after = max(0, int(after))
+    with _pool_log_lock:
+        items = [dict(item) for item in _pool_log_history if int(item.get("seq", 0)) > after]
+        if len(items) > limit:
+            items = items[-limit:]
+        last_seq = _pool_log_seq
+    return {"ok": True, "items": items, "last_seq": last_seq}
 
 
 # ============================================================
