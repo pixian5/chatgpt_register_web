@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>控制台</title>
+  <title></title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -70,27 +70,7 @@ body {
 }
 
 .left-header {
-  padding: 20px 18px 16px;
-  border-bottom: 1px solid var(--separator);
-  flex-shrink: 0;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.app-name {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: 0.01em;
-}
-
-.app-version {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  margin-top: 4px;
-  line-height: 1.4;
+  display: none;
 }
 
 .left-body {
@@ -508,7 +488,7 @@ input:focus, select:focus {
   width: min(100%, 1680px);
   margin: 0 auto 14px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   padding: 14px 16px;
   border-radius: 22px;
@@ -516,23 +496,6 @@ input:focus, select:focus {
   border: 1px solid rgba(255,255,255,0.58);
   box-shadow: var(--shadow-card);
   backdrop-filter: blur(16px);
-}
-
-.mobile-brand {
-  min-width: 0;
-}
-
-.mobile-brand-kicker {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.mobile-brand-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
 }
 
 .mobile-actions {
@@ -807,6 +770,12 @@ input:focus, select:focus {
     transform: translateX(0);
   }
 
+  .left-header {
+    display: flex;
+    padding: 16px;
+    justify-content: flex-end;
+  }
+
   .left-close-btn {
     display: inline-flex;
   }
@@ -905,8 +874,7 @@ input:focus, select:focus {
   }
 
   .mobile-topbar {
-    align-items: flex-start;
-    flex-direction: column;
+    justify-content: stretch;
   }
 
   .mobile-actions {
@@ -959,10 +927,6 @@ input:focus, select:focus {
 </head>
 <body>
 <div class="mobile-topbar">
-  <div class="mobile-brand">
-    <div class="mobile-brand-kicker">Responsive Console</div>
-    <div class="mobile-brand-title">控制台</div>
-  </div>
   <div class="mobile-actions">
     <button class="btn btn-sm btn-secondary" type="button" onclick="switchToLogs()">日志</button>
     <button class="btn btn-sm btn-primary" type="button" onclick="toggleSettingsDrawer()">设置</button>
@@ -976,9 +940,6 @@ input:focus, select:focus {
   ══════════════════════════════════════════ -->
   <aside class="left-panel">
     <div class="left-header">
-      <div>
-        <div class="app-name">控制台</div>
-      </div>
       <button class="icon-btn left-close-btn" type="button" onclick="closeSettingsDrawer()">关闭</button>
     </div>
 
