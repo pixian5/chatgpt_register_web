@@ -693,6 +693,7 @@ def _run_daemon_once():
         return
 
     _pool_daemon["running_now"] = True
+    _pool_daemon["last_run_ts"] = time.time()
     _pool_daemon["stop_requested"] = False
     log_cb = _make_pool_log_cb()
     try:
@@ -716,7 +717,6 @@ def _run_daemon_once():
         _pool_daemon["running_now"] = False
         _pool_daemon["stop_event"] = None
         _pool_daemon["stop_requested"] = False
-        _pool_daemon["last_run_ts"] = time.time()
         if _pool_daemon["enabled"]:
             interval_sec = _pool_daemon["interval_min"] * 60
             _pool_daemon["next_run_ts"] = time.time() + interval_sec
@@ -742,6 +742,7 @@ async def pool_daemon_start(body: dict = Body(...)):
     _pool_daemon.update({
         "enabled": True,
         "interval_min": interval_min,
+        "last_run_ts": time.time(),
         "stop_requested": False,
         "config": {
             "base_url": base_url,
@@ -814,6 +815,7 @@ async def pool_daemon_run_once(body: dict = Body(default={})):
 
     def run_task():
         _pool_daemon["running_now"] = True
+        _pool_daemon["last_run_ts"] = time.time()
         _pool_daemon["stop_requested"] = False
         try:
             proxy = reg._proxy_pool.get_best(cfg.get("proxy", ""))
@@ -835,7 +837,6 @@ async def pool_daemon_run_once(body: dict = Body(default={})):
             _pool_daemon["running_now"] = False
             _pool_daemon["stop_event"] = None
             _pool_daemon["stop_requested"] = False
-            _pool_daemon["last_run_ts"] = time.time()
 
     threading.Thread(target=run_task, daemon=True).start()
     return {"ok": True}
