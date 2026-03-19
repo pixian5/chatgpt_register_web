@@ -10,6 +10,7 @@ register.py - pam管理 Web UI 后端库
 from __future__ import annotations
 
 import concurrent.futures
+import copy
 import io
 import json
 import logging
@@ -32,6 +33,54 @@ urllib3.disable_warnings(InsecureRequestWarning)
 # ============================================================
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DEFAULT_TOTAL_ACCOUNTS = 3
+DEFAULT_WORKERS = 1
+DEFAULT_PROXY_TEST_WORKERS = 20
+DEFAULT_POOL_TARGET_TYPE = "codex"
+DEFAULT_POOL_TARGET_COUNT = 100
+DEFAULT_POOL_PROBE_WORKERS = 20
+DEFAULT_POOL_DELETE_WORKERS = 10
+DEFAULT_POOL_INTERVAL_MIN = 30
+
+DEFAULT_CONFIG = {
+    "total_accounts": DEFAULT_TOTAL_ACCOUNTS,
+    "duckmail_api_base": "https://api.duckmail.sbs",
+    "duckmail_domain": "duckmail.sbs",
+    "duckmail_bearer": "",
+    "proxy": "",
+    "workers": DEFAULT_WORKERS,
+    "output_file": "registered_accounts.txt",
+    "enable_oauth": True,
+    "oauth_required": True,
+    "oauth_issuer": "https://auth.openai.com",
+    "oauth_client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
+    "oauth_redirect_uri": "http://localhost:1455/auth/callback",
+    "ak_file": "ak.txt",
+    "rk_file": "rk.txt",
+    "token_json_dir": "codex_tokens",
+    "proxy_test_workers": DEFAULT_PROXY_TEST_WORKERS,
+    "pool": {
+        "base_url": "",
+        "token": "",
+        "target_type": DEFAULT_POOL_TARGET_TYPE,
+        "target_count": DEFAULT_POOL_TARGET_COUNT,
+        "min_candidates": 100,
+        "proxy": "",
+        "probe_workers": DEFAULT_POOL_PROBE_WORKERS,
+        "delete_workers": DEFAULT_POOL_DELETE_WORKERS,
+        "interval_min": DEFAULT_POOL_INTERVAL_MIN,
+    },
+}
+
+
+def _deep_merge_dict(base: dict, override: dict) -> dict:
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_merge_dict(base[key], value)
+        else:
+            base[key] = value
+    return base
 
 
 def _resolve_token_dir(config: Optional[dict] = None) -> str:
@@ -1121,39 +1170,13 @@ def test_proxies_concurrent(
 def load_config() -> dict:
     """读取 config.json"""
     cfg_path = os.path.join(_BASE_DIR, "config.json")
-    defaults = {
-        "total_accounts": 3,
-        "duckmail_api_base": "https://api.duckmail.sbs",
-        "duckmail_domain": "duckmail.sbs",
-        "duckmail_bearer": "",
-        "proxy": "",
-        "workers": 1,
-        "output_file": "registered_accounts.txt",
-        "enable_oauth": True,
-        "oauth_required": True,
-        "oauth_issuer": "https://auth.openai.com",
-        "oauth_client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
-        "oauth_redirect_uri": "http://localhost:1455/auth/callback",
-        "ak_file": "ak.txt",
-        "rk_file": "rk.txt",
-        "token_json_dir": "codex_tokens",
-        "proxy_test_workers": 20,
-        "pool": {
-            "base_url": "",
-            "token": "",
-            "target_type": "codex",
-            "min_candidates": 100,
-            "proxy": "",
-            "probe_workers": 20,
-            "delete_workers": 10,
-            "interval_min": 30,
-        },
-    }
+    defaults = copy.deepcopy(DEFAULT_CONFIG)
     if os.path.exists(cfg_path):
         try:
             with open(cfg_path, "r", encoding="utf-8") as f:
                 file_cfg = json.load(f)
-                defaults.update(file_cfg)
+                if isinstance(file_cfg, dict):
+                    _deep_merge_dict(defaults, file_cfg)
         except Exception:
             pass
     return defaults

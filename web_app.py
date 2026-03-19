@@ -184,7 +184,7 @@ async def register_start(body: dict = Body(...)):
 
     config = reg.load_config()
     count = int(body.get("count", 1))
-    workers = int(body.get("workers") or config.get("workers") or 1)
+    workers = int(body.get("workers") or config.get("workers") or reg.DEFAULT_WORKERS)
     proxy = str(body.get("proxy", "")).strip()
 
     # 重置状态
@@ -518,7 +518,7 @@ async def pool_inspect(body: dict = Body(...)):
     base_url = body.get("base_url", "").strip()
     token = body.get("token", "").strip()
     target_type = body.get("target_type", "codex")
-    target_count = int(body.get("target_count", 100))
+    target_count = int(body.get("target_count", reg.DEFAULT_POOL_TARGET_COUNT))
     proxy = body.get("proxy", "").strip()
 
     if not base_url or not token:
@@ -674,7 +674,7 @@ async def download_rk():
 
 _pool_daemon: Dict[str, Any] = {
     "enabled": False,
-    "interval_min": 30,
+    "interval_min": reg.DEFAULT_POOL_INTERVAL_MIN,
     "next_run_ts": None,
     "last_run_ts": None,
     "running_now": False,
@@ -738,7 +738,7 @@ async def pool_daemon_start(body: dict = Body(...)):
     if _pool_daemon_timer and _pool_daemon_timer.is_alive():
         _pool_daemon_timer.cancel()
 
-    interval_min = max(1, int(body.get("interval_min", 30)))
+    interval_min = max(1, int(body.get("interval_min", reg.DEFAULT_POOL_INTERVAL_MIN)))
     _pool_daemon.update({
         "enabled": True,
         "interval_min": interval_min,
