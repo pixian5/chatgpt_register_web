@@ -832,11 +832,11 @@ input:focus, select:focus {
     <!-- 仅注册卡片 -->
     <div class="card maint-card">
       <div class="card-title" style="margin-bottom:12px">仅注册</div>
-      <div id="regonly-shared-success" style="display:none;font-size:13px;color:var(--text-secondary);margin-bottom:10px"></div>
 
       <!-- idle: 注册按钮 -->
       <div id="regonly-idle">
         <button class="btn btn-primary" onclick="startRegOnly()">注册账号</button>
+        <div id="regonly-shared-success" style="display:none;font-size:13px;color:var(--text-secondary);margin-top:10px"></div>
       </div>
 
       <!-- input: 数量输入 -->
@@ -1032,12 +1032,12 @@ function _renderSharedRegSuccess() {
   const el = document.getElementById('regonly-shared-success');
   if (!el) return;
   if (!_sharedRegStatsMode) {
-    el.textContent = '';
+    el.innerHTML = '';
     el.style.display = 'none';
     return;
   }
   const label = _sharedRegStatsMode === 'daemon' ? '守护补号' : '手动补号';
-  el.textContent = `${label}注册结果：成功 ${_sharedRegSuccessCount}，失败 ${_sharedRegFailCount}`;
+  el.innerHTML = `${label}注册结果：成功 <b style="color:var(--green)">${_sharedRegSuccessCount}</b>，失败 <b style="color:var(--red)">${_sharedRegFailCount}</b>`;
   el.style.display = '';
 }
 
