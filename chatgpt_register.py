@@ -416,10 +416,21 @@ def _save_codex_tokens(email: str, tokens: dict):
     token_dir = TOKEN_JSON_DIR if os.path.isabs(TOKEN_JSON_DIR) else os.path.join(base_dir, TOKEN_JSON_DIR)
     os.makedirs(token_dir, exist_ok=True)
 
-    token_path = os.path.join(token_dir, f"{email}.json")
+    token_path = None
     with _file_lock:
+        while True:
+            token_name = now.strftime("%m%d%H%M%S")
+            candidate_path = os.path.join(token_dir, f"{token_name}.json")
+            if not os.path.exists(candidate_path):
+                token_path = candidate_path
+                break
+            time.sleep(1)
+            now = datetime.now(tz=timezone(timedelta(hours=8)))
+
         with open(token_path, "w", encoding="utf-8") as f:
             json.dump(token_data, f, ensure_ascii=False)
+
+    return token_path
 
 
 def _generate_password(length=14):
@@ -1917,12 +1928,13 @@ def _register_one(idx, total, proxy, output_file, stop_event=None):
 
         # 3. OAuth（可选）
         oauth_ok = True
+        token_path = None
         if ENABLE_OAUTH:
             reg._print("[OAuth] 开始获取 Codex Token...")
             tokens = reg.perform_codex_oauth_login_http(email, chatgpt_password, mail_token=mail_token)
             oauth_ok = bool(tokens and tokens.get("access_token"))
             if oauth_ok:
-                _save_codex_tokens(email, tokens)
+                token_path = _save_codex_tokens(email, tokens)
                 reg._print("[OAuth] Token 已保存")
             else:
                 msg = "OAuth 获取失败"
@@ -1937,14 +1949,14 @@ def _register_one(idx, total, proxy, output_file, stop_event=None):
 
         with _print_lock:
             print(f"\n[OK] [{tag}] {email} 注册成功!")
-        return True, email, None
+        return True, email, token_path, None
 
     except Exception as e:
         error_msg = str(e)
         with _print_lock:
             print(f"\n[FAIL] [{idx}] 注册失败: {error_msg}")
             traceback.print_exc()
-        return False, None, error_msg
+        return False, None, None, error_msg
 
 
 def run_batch(total_accounts: int = 3, output_file="registered_accounts.txt",

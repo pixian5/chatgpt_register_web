@@ -177,7 +177,7 @@ def run_batch_register(
     log_cb: Callable[[str], None],
     progress_cb: Callable[[int, int, int], None],
     config: Optional[dict] = None,
-    success_cb: Optional[Callable[[str], None]] = None,
+    success_cb: Optional[Callable[[str, Optional[str]], None]] = None,
 ) -> dict:
     """
     批量注册主函数（在线程中运行，通过回调输出日志）
@@ -209,9 +209,9 @@ def run_batch_register(
         old_stdout = sys.stdout
         sys.stdout = capture
         try:
-            ok, email, err = mod._register_one(idx, total, effective_proxy, output_file, stop_event=stop_event)
+            ok, email, token_path, err = mod._register_one(idx, total, effective_proxy, output_file, stop_event=stop_event)
         except Exception as e:
-            ok, email, err = False, None, str(e)
+            ok, email, token_path, err = False, None, None, str(e)
         finally:
             sys.stdout = old_stdout
 
@@ -228,10 +228,11 @@ def run_batch_register(
 
         if ok and email and success_cb:
             try:
-                success_cb(email)
+                success_cb(email, token_path)
             except Exception as e:
                 if log_cb:
-                    log_cb(f"[Pool] 单文件上传回调异常: {email}.json - {e}")
+                    token_label = os.path.basename(token_path) if token_path else f"{email}.json"
+                    log_cb(f"[Pool] 单文件上传回调异常: {token_label} - {e}")
 
         return ok, email, err
 
@@ -998,23 +999,24 @@ def run_pool_fill(
         log("[Pool] 已收到停止请求，取消补号")
         return {"success": 0, "fail": 0, "total": fill_count, "uploaded": pre_uploaded}
 
-    token_dir = (config or {}).get("token_json_dir", "codex_tokens")
-    if not os.path.isabs(token_dir):
-        token_dir = os.path.join(_BASE_DIR, token_dir)
     uploaded_count = pre_uploaded
     upload_lock = threading.Lock()
 
-    def upload_after_success(email: str):
+    def upload_after_success(email: str, token_path: Optional[str]):
         nonlocal uploaded_count
         if not base_url or not pool_token:
             return
         if stop_event and stop_event.is_set():
-            log(f"[Pool] 已停止，跳过上传: {email}.json")
+            token_label = os.path.basename(token_path) if token_path else f"{email}.json"
+            log(f"[Pool] 已停止，跳过上传: {token_label}")
+            return
+        if not token_path:
+            log(f"[Pool] 未找到新 token 文件，跳过上传: {email}")
             return
         status = _upload_token_file_to_pool(
             base_url=base_url,
             pool_token=pool_token,
-            file_path=os.path.join(token_dir, f"{email}.json"),
+            file_path=token_path,
             proxy=proxy,
             log_cb=log_cb,
         )
@@ -1378,17 +1380,17 @@ def run_pool_maintain_cycle(
                     }
                 log(f"[Daemon] 开始注册 {gap} 个账号...")
                 cfg_workers = int((config or {}).get("workers") or 3)
-                token_dir = (config or {}).get("token_json_dir", "codex_tokens")
-                if not os.path.isabs(token_dir):
-                    token_dir = os.path.join(_BASE_DIR, token_dir)
                 upload_lock = threading.Lock()
 
-                def upload_after_success(email: str):
+                def upload_after_success(email: str, token_path: Optional[str]):
                     nonlocal uploaded
+                    if not token_path:
+                        log(f"[Daemon] 未找到新 token 文件，跳过上传: {email}")
+                        return
                     status = _upload_token_file_to_pool(
                         base_url=base_url,
                         pool_token=token,
-                        file_path=os.path.join(token_dir, f"{email}.json"),
+                        file_path=token_path,
                         proxy=proxy,
                         log_cb=log_cb,
                     )
