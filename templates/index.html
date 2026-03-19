@@ -1708,6 +1708,7 @@ function _updateDaemonUI(d) {
     countdown.style.display = 'flex';
 
     if (d.running_now) {
+      _stopLocalCountdown();
       runBadge.style.display = 'inline-block';
       cntVal.textContent = '运行中';
     } else {
@@ -1715,6 +1716,9 @@ function _updateDaemonUI(d) {
       if (d.remaining_sec != null) {
         cntVal.textContent = fmtSec(d.remaining_sec);
         _startLocalCountdown(d.remaining_sec);
+      } else {
+        _stopLocalCountdown();
+        cntVal.textContent = '--:--';
       }
     }
   } else {
