@@ -1118,7 +1118,7 @@ def load_config() -> dict:
         "duckmail_domain": "duckmail.sbs",
         "duckmail_bearer": "",
         "proxy": "",
-        "workers": 3,
+        "workers": 1,
         "output_file": "registered_accounts.txt",
         "enable_oauth": True,
         "oauth_required": True,
@@ -1137,6 +1137,7 @@ def load_config() -> dict:
             "proxy": "",
             "probe_workers": 20,
             "delete_workers": 10,
+            "interval_min": 200,
         },
     }
     if os.path.exists(cfg_path):

@@ -182,7 +182,7 @@ async def register_start(body: dict = Body(...)):
 
     config = reg.load_config()
     count = int(body.get("count", 1))
-    workers = int(body.get("workers") or config.get("workers") or 3)
+    workers = int(body.get("workers") or config.get("workers") or 1)
     proxy = str(body.get("proxy", "")).strip()
 
     # 重置状态

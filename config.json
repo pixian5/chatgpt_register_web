@@ -3,7 +3,7 @@
   "duckmail_domain": "codex.sbbz.tech",
   "duckmail_bearer": "dk_5f1845fdde2646c71b5270f164378d5ed20e03ed8084526c035c77c884bab4ce",
   "proxy": "",
-  "workers": 3,
+  "workers": 1,
   "proxy_test_workers": 20,
   "oauth_issuer": "https://auth.openai.com",
   "oauth_client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
@@ -14,10 +14,10 @@
     "base_url": "https://or.sbbz.tech:52788/",
     "token": "1",
     "target_type": "codex",
-    "target_count": 110,
+    "target_count": 120,
     "proxy": "",
-    "probe_workers": 30,
+    "probe_workers": 40,
     "delete_workers": 10,
-    "interval_min": 60
+    "interval_min": 200
   }
 }

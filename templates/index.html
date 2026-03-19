@@ -652,7 +652,7 @@ input:focus, select:focus {
         </div>
         <div class="field-group">
           <label>并发数</label>
-          <input type="number" id="cfg-workers" value="3" min="1" max="20">
+          <input type="number" id="cfg-workers" value="1" min="1" max="20">
         </div>
       </div>
 
@@ -793,7 +793,7 @@ input:focus, select:focus {
             <span class="daemon-status-text" id="daemon-status-label">已停止</span>
           </div>
           <div class="daemon-interval-wrap">
-            每 <input type="number" id="daemon-interval" value="30" min="1"> 分钟执行一次
+            每 <input type="number" id="daemon-interval" value="200" min="1"> 分钟执行一次
           </div>
         </div>
         <div id="daemon-countdown-row" class="countdown-bar" style="display:none">
@@ -923,7 +923,7 @@ let _savedConfig = {
   target_count: 100,
   proxy: '',
   pool_proxy: '',
-  workers: 3,
+  workers: 1,
   pool_probe_workers: 20,
   pool_delete_workers: 10,
   proxy_test_workers: 20,
@@ -943,7 +943,7 @@ function _syncSavedConfig(d) {
     target_count: (d.pool && d.pool.target_count)  || 100,
     proxy:        d.proxy || '',
     pool_proxy:   (d.pool && d.pool.proxy)         || '',
-    workers:      d.workers || 3,
+    workers:      d.workers || 1,
     pool_probe_workers:  (d.pool && d.pool.probe_workers)  || 20,
     pool_delete_workers: (d.pool && d.pool.delete_workers) || 10,
     proxy_test_workers:  d.proxy_test_workers || 20,
@@ -1127,7 +1127,7 @@ async function loadSettings() {
     _setVal('cfg-duckmail-domain', d.duckmail_domain);
     _setVal('cfg-duckmail-bearer', d.duckmail_bearer);
     _setVal('cfg-proxy', d.proxy);
-    _setVal('cfg-workers', d.workers || 3);
+    _setVal('cfg-workers', d.workers || 1);
     _setVal('cfg-proxy-test-workers', d.proxy_test_workers || 20);
     _setVal('cfg-oauth-issuer', d.oauth_issuer);
     _setVal('cfg-oauth-client-id', d.oauth_client_id);
@@ -1149,7 +1149,7 @@ async function loadSettings() {
     }
     // 同步守护进程间隔
     if (d.pool && d.pool.interval_min) {
-      _setVal('daemon-interval', d.pool.interval_min);
+      _setVal('daemon-interval', d.pool.interval_min || 200);
     }
     // 同步已保存配置（供 getPoolConfig() 使用）
     _syncSavedConfig(d);
@@ -1175,7 +1175,7 @@ async function saveSettings() {
     duckmail_domain: document.getElementById('cfg-duckmail-domain').value.trim(),
     duckmail_bearer:   document.getElementById('cfg-duckmail-bearer').value.trim(),
     proxy:   document.getElementById('cfg-proxy').value.trim(),
-    workers: parseInt(document.getElementById('cfg-workers').value) || 3,
+    workers: parseInt(document.getElementById('cfg-workers').value) || 1,
     proxy_test_workers: parseInt(document.getElementById('cfg-proxy-test-workers').value) || 20,
     oauth_issuer:      document.getElementById('cfg-oauth-issuer').value.trim(),
     oauth_client_id:   document.getElementById('cfg-oauth-client-id').value.trim(),
@@ -1190,7 +1190,7 @@ async function saveSettings() {
       proxy:        document.getElementById('cfg-pool-proxy').value.trim(),
       probe_workers:  parseInt(document.getElementById('cfg-pool-probe-workers').value) || 20,
       delete_workers: parseInt(document.getElementById('cfg-pool-delete-workers').value) || 10,
-      interval_min: parseInt(document.getElementById('daemon-interval').value) || 30,
+      interval_min: parseInt(document.getElementById('daemon-interval').value) || 200,
     },
   };
 
@@ -1263,7 +1263,7 @@ async function confirmRegOnly() {
     const r = await fetch('/api/register/start', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ count, workers: _savedConfig.workers || 3 }),
+      body: JSON.stringify({ count, workers: _savedConfig.workers || 1 }),
     });
     if (!r.ok) {
       const e = await r.json();
@@ -1380,6 +1380,7 @@ async function startInspect(options = {}) {
     return;
   }
 
+  switchToLogs();
   _showInspectPanel('inspecting');
 
   try {
@@ -1543,7 +1544,7 @@ async function startDaemon() {
     appendLog('[提示] 请先在左栏填写 CliProxyAPI URL 和 Token');
     return;
   }
-  const interval_min = parseInt(document.getElementById('daemon-interval').value) || 30;
+  const interval_min = parseInt(document.getElementById('daemon-interval').value) || 200;
 
   try {
     const r = await fetch('/api/pool/daemon/start', {
