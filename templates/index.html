@@ -1709,7 +1709,7 @@ function _updateDaemonUI(d) {
 
     if (d.running_now) {
       _stopLocalCountdown();
-      runBadge.style.display = 'inline-block';
+      runBadge.style.display = 'none';
       cntVal.textContent = '运行中';
     } else {
       runBadge.style.display = 'none';
@@ -1734,9 +1734,10 @@ function _updateDaemonUI(d) {
   if (lastRunEl) {
     if (d.last_run_ts) {
       const dt = new Date(d.last_run_ts * 1000);
+      lastRunEl.style.display = '';
       lastRunEl.textContent = '上次执行: ' + dt.toLocaleString('zh-CN', {hour12: false});
     } else {
-      lastRunEl.textContent = '上次执行: —';
+      lastRunEl.style.display = 'none';
     }
   }
 }
