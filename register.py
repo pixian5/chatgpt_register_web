@@ -752,7 +752,7 @@ def _delete_invalid_accounts(
         log("[Pool] 无需清理，没有 401 账号")
         return {"deleted": 0, "delete_fail": 0}
 
-    log(f"[Pool] 开始删除 {len(invalid_401)} 个失效账号...")
+    log(f"[Pool] 开始远端删除 {len(invalid_401)} 个失效账号，并同步清理本地副本...")
     base = base_url.rstrip("/")
     headers = {"Authorization": f"Bearer {token}"}
     session = _pool_session(proxy, timeout)
@@ -818,7 +818,7 @@ def _delete_invalid_accounts(
         if not display_name:
             with del_lock:
                 delete_fail += 1
-            log("[Pool] 删除失败: 空文件名")
+            log("[Pool] 远端删除失败: 空文件名")
             return
         try:
             attempts = _build_attempts(file_id, name)
@@ -826,7 +826,7 @@ def _delete_invalid_accounts(
                 with del_lock:
                     delete_fail += 1
                     fail_stats["EMPTY:attempts"] += 1
-                log(f"[Pool] 删除失败: {display_name} (无可用删除方式)")
+                log(f"[Pool] 远端删除失败: {display_name} (无可用删除方式)")
                 return
 
             last_status: Optional[int] = None
@@ -842,7 +842,7 @@ def _delete_invalid_accounts(
                 if r.status_code in (200, 204):
                     with del_lock:
                         deleted += 1
-                    log(f"[Pool] 删除成功: {display_name} ({label})")
+                    log(f"[Pool] 远端删除成功: {display_name} ({label})")
                     # 同步删除本地副本（根目录和 uploaded/）
                     clean_name = _normalize_token_name(name or display_name)
                     if clean_name:
@@ -853,9 +853,9 @@ def _delete_invalid_accounts(
                             if os.path.isfile(local_path):
                                 try:
                                     os.remove(local_path)
-                                    log(f"[Pool] 本地删除: {clean_name}.json")
+                                    log(f"[Pool] 本地删除成功: {local_path}")
                                 except Exception as ex:
-                                    log(f"[Pool] 本地删除失败: {clean_name} - {ex}")
+                                    log(f"[Pool] 本地删除失败: {local_path} - {ex}")
                             else:
                                 log(f"[Pool] 本地不存在: {local_path}")
                     return
@@ -877,12 +877,12 @@ def _delete_invalid_accounts(
                 delete_fail += 1
                 fail_stats[f"{final_status}:{final_label}"] += 1
             detail_suffix = f" {final_detail}" if final_detail else ""
-            log(f"[Pool] 删除失败: {display_name} ({final_status}, {final_label}){detail_suffix}")
+            log(f"[Pool] 远端删除失败: {display_name} ({final_status}, {final_label}){detail_suffix}")
         except Exception as e:
             with del_lock:
                 delete_fail += 1
                 fail_stats["EXC:request"] += 1
-            log(f"[Pool] 删除异常: {display_name} - {e}")
+            log(f"[Pool] 远端删除异常: {display_name} - {e}")
 
     cfg = config or load_config()
     max_workers = int((cfg.get("pool") or {}).get("delete_workers", DEFAULT_POOL_DELETE_WORKERS))
@@ -892,8 +892,8 @@ def _delete_invalid_accounts(
 
     if fail_stats:
         stats_str = ", ".join([f"{k}={v}" for k, v in fail_stats.most_common(5)])
-        log(f"[Pool] 删除失败统计(前5): {stats_str}")
-    log(f"[Pool] 清理完成: 删除成功={deleted}, 失败={delete_fail}")
+        log(f"[Pool] 远端删除失败统计(前5): {stats_str}")
+    log(f"[Pool] 清理完成: 远端删除成功={deleted}, 远端删除失败={delete_fail}")
     return {"deleted": deleted, "delete_fail": delete_fail}
 
 
