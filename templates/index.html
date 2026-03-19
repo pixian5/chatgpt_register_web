@@ -832,6 +832,7 @@ input:focus, select:focus {
     <!-- 仅注册卡片 -->
     <div class="card maint-card">
       <div class="card-title" style="margin-bottom:12px">仅注册</div>
+      <div id="regonly-shared-success" style="display:none;font-size:13px;color:var(--text-secondary);margin-bottom:10px"></div>
 
       <!-- idle: 注册按钮 -->
       <div id="regonly-idle">
@@ -936,7 +937,19 @@ let _poolTaskRunning = false;
 let _poolTaskName = '';
 let _daemonRunningNow = false;
 let _poolStopRequested = false;
+let _sharedRegSuccessMode = '';
+let _sharedRegSuccessCount = 0;
 const LOG_BUFFER_MAX = 5000;
+const APP_DEFAULTS = Object.freeze({
+  target_type: 'codex',
+  target_count: 100,
+  workers: 1,
+  pool_interval_min: 30,
+  pool_probe_workers: 20,
+  pool_delete_workers: 10,
+  proxy_test_workers: 20,
+  regonly_count: 5,
+});
 
 // ════════════════════════════════════════════════════════════════
 // 工具函数
@@ -962,15 +975,15 @@ function _syncSavedConfig(d) {
   _savedConfig = {
     base_url: pool.base_url ?? '',
     token: pool.token ?? '',
-    target_type: pool.target_type ?? '',
-    target_count: pool.target_count ?? 0,
+    target_type: pool.target_type ?? APP_DEFAULTS.target_type,
+    target_count: pool.target_count ?? APP_DEFAULTS.target_count,
     proxy: d.proxy ?? '',
     pool_proxy: pool.proxy ?? '',
-    workers: d.workers ?? 0,
-    pool_interval_min: pool.interval_min ?? 0,
-    pool_probe_workers: pool.probe_workers ?? 0,
-    pool_delete_workers: pool.delete_workers ?? 0,
-    proxy_test_workers: d.proxy_test_workers ?? 0,
+    workers: d.workers ?? APP_DEFAULTS.workers,
+    pool_interval_min: pool.interval_min ?? APP_DEFAULTS.pool_interval_min,
+    pool_probe_workers: pool.probe_workers ?? APP_DEFAULTS.pool_probe_workers,
+    pool_delete_workers: pool.delete_workers ?? APP_DEFAULTS.pool_delete_workers,
+    proxy_test_workers: d.proxy_test_workers ?? APP_DEFAULTS.proxy_test_workers,
   };
 }
 
@@ -993,6 +1006,38 @@ function _incFillSuccess() {
     el.textContent = `注册成功账号数量：${_fillSuccessCount}`;
     el.style.display = '';
   }
+}
+
+function _renderSharedRegSuccess() {
+  const el = document.getElementById('regonly-shared-success');
+  if (!el) return;
+  if (!_sharedRegSuccessMode) {
+    el.textContent = '';
+    el.style.display = 'none';
+    return;
+  }
+  const label = _sharedRegSuccessMode === 'daemon' ? '守护补号' : '手动补号';
+  el.textContent = `${label}注册成功账号数量：${_sharedRegSuccessCount}`;
+  el.style.display = '';
+}
+
+function _startSharedRegSuccess(mode) {
+  _sharedRegSuccessMode = mode;
+  _sharedRegSuccessCount = 0;
+  _renderSharedRegSuccess();
+}
+
+function _clearSharedRegSuccess(mode = '') {
+  if (mode && _sharedRegSuccessMode !== mode) return;
+  _sharedRegSuccessMode = '';
+  _sharedRegSuccessCount = 0;
+  _renderSharedRegSuccess();
+}
+
+function _incSharedRegSuccess(mode) {
+  if (_sharedRegSuccessMode !== mode) return;
+  _sharedRegSuccessCount += 1;
+  _renderSharedRegSuccess();
 }
 
 function scheduleRefreshPoolStatus(delay = 150) {
@@ -1031,12 +1076,25 @@ function appendLog(msg) {
     box.scrollTop = box.scrollHeight;
   }
 
+  if (msg.startsWith('[Daemon] 开始维护周期:')) {
+    _clearSharedRegSuccess('daemon');
+  }
+  if (msg.startsWith('[Daemon] 开始注册 ')) {
+    _startSharedRegSuccess('daemon');
+  }
+
   if (_inspectState === 'running') {
     const runningMsg = document.getElementById('running-msg');
     if (runningMsg && runningMsg.textContent.includes('步骤 2/2') && msg.includes('注册成功')) {
       _incFillSuccess();
+      _incSharedRegSuccess('manual_fill');
       refreshAccounts();
     }
+  }
+
+  if (_sharedRegSuccessMode === 'daemon' && msg.includes('注册成功')) {
+    _incSharedRegSuccess('daemon');
+    refreshAccounts();
   }
 
   if (msg.includes('[Pool] 上传成功:') || msg.includes('[Pool] 已存在跳过:')) {
@@ -1268,7 +1326,7 @@ async function saveSettings() {
       proxy:        document.getElementById('cfg-pool-proxy').value.trim(),
       probe_workers: _readInt('cfg-pool-probe-workers', _savedConfig.pool_probe_workers),
       delete_workers: _readInt('cfg-pool-delete-workers', _savedConfig.pool_delete_workers),
-      interval_min: _readInt('daemon-interval', _savedConfig.pool_interval_min ?? 0),
+      interval_min: _readInt('daemon-interval', _savedConfig.pool_interval_min ?? APP_DEFAULTS.pool_interval_min),
     },
   };
 
@@ -1331,8 +1389,8 @@ function cancelRegOnly() {
 }
 
 async function confirmRegOnly() {
-  const count = parseInt(document.getElementById('regonly-count').value) || 1;
-  const workers = _savedConfig.workers || _readInt('cfg-workers', 1);
+  const count = parseInt(document.getElementById('regonly-count').value) || APP_DEFAULTS.regonly_count;
+  const workers = _savedConfig.workers || _readInt('cfg-workers', APP_DEFAULTS.workers);
   switchToLogs();
   document.getElementById('regonly-input').style.display = 'none';
   document.getElementById('regonly-running').style.display = 'block';
@@ -1558,6 +1616,7 @@ async function confirmFill() {
 
     // 步骤2: 补号
     document.getElementById('running-msg').textContent = `步骤 2/2  补号中 (${gap} 个)...`;
+    _startSharedRegSuccess('manual_fill');
     appendLog(`[Pool] 开始补号: ${gap} 个账号...`);
 
     const fillR = await fetch('/api/pool/fill', {
@@ -1634,7 +1693,7 @@ async function startDaemon() {
     appendLog('[提示] 请先在左栏填写 CliProxyAPI URL 和 Token');
     return;
   }
-  const interval_min = _readInt('daemon-interval', _savedConfig.pool_interval_min || 1);
+  const interval_min = _readInt('daemon-interval', _savedConfig.pool_interval_min || APP_DEFAULTS.pool_interval_min);
 
   try {
     const r = await fetch('/api/pool/daemon/start', {

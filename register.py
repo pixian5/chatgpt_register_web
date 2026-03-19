@@ -327,7 +327,7 @@ def _pool_session(proxy: str = "", timeout: int = 10) -> _requests.Session:
 def get_pool_status(
     base_url: str,
     token: str,
-    target_type: str = "codex",
+    target_type: str = DEFAULT_POOL_TARGET_TYPE,
     proxy: str = "",
     timeout: int = 10,
 ) -> dict:
@@ -353,7 +353,7 @@ def get_pool_status(
 def get_pool_accounts(
     base_url: str,
     token: str,
-    target_type: str = "codex",
+    target_type: str = DEFAULT_POOL_TARGET_TYPE,
     proxy: str = "",
     timeout: int = 10,
 ) -> dict:
@@ -376,7 +376,7 @@ def get_pool_accounts(
 def get_sync_status(
     base_url: str,
     pool_token: str,
-    target_type: str = "codex",
+    target_type: str = DEFAULT_POOL_TARGET_TYPE,
     config: Optional[dict] = None,
     proxy: str = "",
 ) -> dict:
@@ -453,7 +453,7 @@ def get_sync_status(
 def sync_local_remote(
     base_url: str,
     pool_token: str,
-    target_type: str = "codex",
+    target_type: str = DEFAULT_POOL_TARGET_TYPE,
     config: Optional[dict] = None,
     proxy: str = "",
     log_cb: Optional[Callable[[str], None]] = None,
@@ -575,7 +575,7 @@ def sync_local_remote(
 def run_pool_probe(
     base_url: str,
     token: str,
-    target_type: str = "codex",
+    target_type: str = DEFAULT_POOL_TARGET_TYPE,
     proxy: str = "",
     timeout: int = 10,
     log_cb: Optional[Callable[[str], None]] = None,
@@ -673,7 +673,7 @@ def run_pool_probe(
 
     if max_workers is None:
         cfg = config or load_config()
-        max_workers = int((cfg.get("pool") or {}).get("probe_workers", 20))
+        max_workers = int((cfg.get("pool") or {}).get("probe_workers", DEFAULT_POOL_PROBE_WORKERS))
     max_workers = max(1, min(int(max_workers), max(1, len(target_files))))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -692,7 +692,7 @@ def run_pool_probe(
 def run_pool_clean(
     base_url: str,
     token: str,
-    target_type: str = "codex",
+    target_type: str = DEFAULT_POOL_TARGET_TYPE,
     proxy: str = "",
     timeout: int = 10,
     log_cb: Optional[Callable[[str], None]] = None,
@@ -878,7 +878,7 @@ def _delete_invalid_accounts(
             log(f"[Pool] 删除异常: {display_name} - {e}")
 
     cfg = config or load_config()
-    max_workers = int((cfg.get("pool") or {}).get("delete_workers", 10))
+    max_workers = int((cfg.get("pool") or {}).get("delete_workers", DEFAULT_POOL_DELETE_WORKERS))
     max_workers = max(1, min(max_workers, max(1, len(invalid_401))))
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
         list(ex.map(delete_one, invalid_401))
@@ -1020,7 +1020,7 @@ def run_pool_fill(
     config: Optional[dict] = None,
     proxy: str = "",
     target_count: int = 0,
-    target_type: str = "codex",
+    target_type: str = DEFAULT_POOL_TARGET_TYPE,
 ) -> dict:
     """补号：注册新账号并尝试上传到账号池"""
 
@@ -1073,7 +1073,7 @@ def run_pool_fill(
             with upload_lock:
                 uploaded_count += 1
 
-    cfg_workers = int((config or {}).get("workers") or 3)
+    cfg_workers = int((config or {}).get("workers") or DEFAULT_WORKERS)
     result = run_batch_register(
         count=fill_count,
         workers=min(cfg_workers, fill_count),
@@ -1402,7 +1402,7 @@ def run_pool_maintain_cycle(
                         "gap": gap,
                     }
                 log(f"[Daemon] 开始注册 {gap} 个账号...")
-                cfg_workers = int((config or {}).get("workers") or 3)
+                cfg_workers = int((config or {}).get("workers") or DEFAULT_WORKERS)
                 upload_lock = threading.Lock()
 
                 def upload_after_success(email: str, token_path: Optional[str]):

@@ -77,11 +77,47 @@ _PROBE_RESULT_TTL_SEC = 120
 # 事件循环引用
 _event_loop: Optional[asyncio.AbstractEventLoop] = None
 
+_DEFAULT_POOL_RUNTIME_CONFIG: Dict[str, Any] = {
+    "base_url": "",
+    "token": "",
+    "target_type": reg.DEFAULT_POOL_TARGET_TYPE,
+    "target_count": reg.DEFAULT_POOL_TARGET_COUNT,
+    "proxy": "",
+}
+
 
 @app.on_event("startup")
 async def _startup():
     global _event_loop
     _event_loop = asyncio.get_event_loop()
+
+
+def _to_int(value: Any, fallback: int, minimum: Optional[int] = None) -> int:
+    try:
+        num = int(value)
+    except (TypeError, ValueError):
+        num = fallback
+    if minimum is not None:
+        num = max(minimum, num)
+    return num
+
+
+def _normalize_pool_runtime_config(
+    source: Optional[dict] = None,
+    fallback: Optional[dict] = None,
+) -> Dict[str, Any]:
+    merged = dict(_DEFAULT_POOL_RUNTIME_CONFIG)
+    if fallback:
+        merged.update(fallback)
+    if source:
+        merged.update(source)
+    return {
+        "base_url": str(merged.get("base_url", "")).strip(),
+        "token": str(merged.get("token", "")).strip(),
+        "target_type": str(merged.get("target_type") or reg.DEFAULT_POOL_TARGET_TYPE).strip() or reg.DEFAULT_POOL_TARGET_TYPE,
+        "target_count": _to_int(merged.get("target_count"), reg.DEFAULT_POOL_TARGET_COUNT, minimum=0),
+        "proxy": str(merged.get("proxy", "")).strip(),
+    }
 
 
 # ============================================================
@@ -161,14 +197,12 @@ async def save_config(config: dict = Body(...)):
     # 如果守护进程已启用，同步更新其运行时配置（下次周期生效）
     pool = config.get("pool", {})
     if _pool_daemon["enabled"] and pool:
-        _pool_daemon["config"].update({
-            "base_url":     pool.get("base_url",     _pool_daemon["config"].get("base_url", "")),
-            "token":        pool.get("token",         _pool_daemon["config"].get("token", "")),
-            "target_type":  pool.get("target_type",  _pool_daemon["config"].get("target_type", "codex")),
-            "target_count": int(pool.get("target_count", _pool_daemon["config"].get("target_count", 10))),
-            "proxy":        pool.get("proxy",         _pool_daemon["config"].get("proxy", "")),
-        })
-        _pool_daemon["interval_min"] = max(1, int(pool.get("interval_min", _pool_daemon["interval_min"])))
+        _pool_daemon["config"] = _normalize_pool_runtime_config(pool, _pool_daemon["config"])
+        _pool_daemon["interval_min"] = _to_int(
+            pool.get("interval_min"),
+            _pool_daemon["interval_min"],
+            minimum=1,
+        )
 
     return {"ok": True}
 
@@ -291,7 +325,7 @@ async def pool_probe(body: dict = Body(...)):
 
     base_url = body.get("base_url", "").strip()
     token = body.get("token", "").strip()
-    target_type = body.get("target_type", "codex")
+    target_type = body.get("target_type", reg.DEFAULT_POOL_TARGET_TYPE)
     proxy = body.get("proxy", "").strip()
 
     if not base_url or not token:
@@ -322,7 +356,7 @@ async def pool_clean(body: dict = Body(...)):
 
     base_url = body.get("base_url", "").strip()
     token = body.get("token", "").strip()
-    target_type = body.get("target_type", "codex")
+    target_type = body.get("target_type", reg.DEFAULT_POOL_TARGET_TYPE)
     proxy = body.get("proxy", "").strip()
     probe_result = body.get("probe_result")
     probe_signature = str(body.get("probe_signature", "") or "")
@@ -384,7 +418,7 @@ async def pool_fill(body: dict = Body(...)):
     base_url = body.get("base_url", "").strip()
     pool_token = body.get("token", "").strip()
     proxy = body.get("proxy", "").strip()
-    target_type = body.get("target_type", "codex")
+    target_type = body.get("target_type", reg.DEFAULT_POOL_TARGET_TYPE)
     target_count = int(body.get("target_count", 0))
     config = reg.load_config()
 
@@ -429,7 +463,7 @@ async def pool_fill(body: dict = Body(...)):
 async def pool_status_api(body: dict = Body(...)):
     base_url = body.get("base_url", "").strip()
     token = body.get("token", "").strip()
-    target_type = body.get("target_type", "codex")
+    target_type = body.get("target_type", reg.DEFAULT_POOL_TARGET_TYPE)
     proxy = body.get("proxy", "").strip()
 
     if not base_url or not token:
@@ -443,7 +477,7 @@ async def pool_status_api(body: dict = Body(...)):
 
 @app.get("/api/pool/accounts")
 async def pool_accounts(base_url: str, token: str,
-                        target_type: str = "codex", proxy: str = ""):
+                        target_type: str = reg.DEFAULT_POOL_TARGET_TYPE, proxy: str = ""):
     if not base_url or not token:
         raise HTTPException(status_code=400, detail="base_url 和 token 不能为空")
     result = await asyncio.get_event_loop().run_in_executor(
@@ -454,7 +488,7 @@ async def pool_accounts(base_url: str, token: str,
 
 @app.get("/api/pool/sync-status")
 async def pool_sync_status(base_url: str, token: str,
-                           target_type: str = "codex", proxy: str = ""):
+                           target_type: str = reg.DEFAULT_POOL_TARGET_TYPE, proxy: str = ""):
     if not base_url or not token:
         raise HTTPException(status_code=400, detail="base_url 和 token 不能为空")
     result = await asyncio.get_event_loop().run_in_executor(
@@ -467,7 +501,7 @@ async def pool_sync_status(base_url: str, token: str,
 async def pool_sync(body: dict = Body(...)):
     base_url = body.get("base_url", "").strip()
     token = body.get("token", "").strip()
-    target_type = body.get("target_type", "codex")
+    target_type = body.get("target_type", reg.DEFAULT_POOL_TARGET_TYPE)
     proxy = body.get("proxy", "").strip()
     target_count = int(body.get("target_count", 0))
 
@@ -517,7 +551,7 @@ async def pool_inspect(body: dict = Body(...)):
     """同步探测账号池，返回检查结果（供前端渲染确认卡）"""
     base_url = body.get("base_url", "").strip()
     token = body.get("token", "").strip()
-    target_type = body.get("target_type", "codex")
+    target_type = body.get("target_type", reg.DEFAULT_POOL_TARGET_TYPE)
     target_count = int(body.get("target_count", reg.DEFAULT_POOL_TARGET_COUNT))
     proxy = body.get("proxy", "").strip()
 
@@ -600,7 +634,7 @@ async def proxy_test(body: dict = Body(...)):
     target_url = body.get("target_url", "https://httpbin.org/ip")
     timeout = int(body.get("timeout", 5))
     config = reg.load_config()
-    max_workers = int(body.get("workers") or config.get("proxy_test_workers") or 20)
+    max_workers = int(body.get("workers") or config.get("proxy_test_workers") or reg.DEFAULT_PROXY_TEST_WORKERS)
 
     if not proxies:
         raise HTTPException(status_code=400, detail="proxies 不能为空")
@@ -680,7 +714,7 @@ _pool_daemon: Dict[str, Any] = {
     "running_now": False,
     "stop_event": None,
     "stop_requested": False,
-    "config": {},  # {base_url, token, target_type, target_count, proxy}
+    "config": dict(_DEFAULT_POOL_RUNTIME_CONFIG),  # {base_url, token, target_type, target_count, proxy}
 }
 _pool_daemon_timer: Optional[threading.Timer] = None
 
@@ -697,15 +731,15 @@ def _run_daemon_once():
     _pool_daemon["stop_requested"] = False
     log_cb = _make_pool_log_cb()
     try:
-        cfg = _pool_daemon["config"]
-        proxy = reg._proxy_pool.get_best(cfg.get("proxy", ""))
+        cfg = _normalize_pool_runtime_config(_pool_daemon["config"])
+        proxy = reg._proxy_pool.get_best(cfg["proxy"])
         stop_event = threading.Event()
         _pool_daemon["stop_event"] = stop_event
         reg.run_pool_maintain_cycle(
-            base_url=cfg.get("base_url", ""),
-            token=cfg.get("token", ""),
-            target_type=cfg.get("target_type", "codex"),
-            target_count=int(cfg.get("target_count", 10)),
+            base_url=cfg["base_url"],
+            token=cfg["token"],
+            target_type=cfg["target_type"],
+            target_count=cfg["target_count"],
             stop_event=stop_event,
             log_cb=log_cb,
             config=reg.load_config(),
@@ -738,19 +772,13 @@ async def pool_daemon_start(body: dict = Body(...)):
     if _pool_daemon_timer and _pool_daemon_timer.is_alive():
         _pool_daemon_timer.cancel()
 
-    interval_min = max(1, int(body.get("interval_min", reg.DEFAULT_POOL_INTERVAL_MIN)))
+    interval_min = _to_int(body.get("interval_min"), reg.DEFAULT_POOL_INTERVAL_MIN, minimum=1)
     _pool_daemon.update({
         "enabled": True,
         "interval_min": interval_min,
         "last_run_ts": time.time(),
         "stop_requested": False,
-        "config": {
-            "base_url": base_url,
-            "token": token,
-            "target_type": body.get("target_type", "codex"),
-            "target_count": int(body.get("target_count", 10)),
-            "proxy": body.get("proxy", "").strip(),
-        },
+        "config": _normalize_pool_runtime_config(body),
     })
 
     # 立即执行一次（在后台线程）
@@ -798,13 +826,13 @@ async def pool_daemon_status():
 @app.post("/api/pool/daemon/run-once")
 async def pool_daemon_run_once(body: dict = Body(default={})):
     """立即触发一次维护周期（不影响守护进程定时器）"""
-    cfg = _pool_daemon["config"]
+    cfg = _normalize_pool_runtime_config(_pool_daemon["config"])
     # 允许临时覆盖配置
     if body.get("base_url"):
-        cfg = {**cfg, **body}
+        cfg = _normalize_pool_runtime_config(body, cfg)
 
-    base_url = cfg.get("base_url", "").strip()
-    token = cfg.get("token", "").strip()
+    base_url = cfg["base_url"]
+    token = cfg["token"]
     if not base_url or not token:
         raise HTTPException(status_code=400, detail="请先配置 base_url 和 token")
 
@@ -818,14 +846,14 @@ async def pool_daemon_run_once(body: dict = Body(default={})):
         _pool_daemon["last_run_ts"] = time.time()
         _pool_daemon["stop_requested"] = False
         try:
-            proxy = reg._proxy_pool.get_best(cfg.get("proxy", ""))
+            proxy = reg._proxy_pool.get_best(cfg["proxy"])
             stop_event = threading.Event()
             _pool_daemon["stop_event"] = stop_event
             reg.run_pool_maintain_cycle(
-                base_url=cfg.get("base_url", ""),
-                token=cfg.get("token", ""),
-                target_type=cfg.get("target_type", "codex"),
-                target_count=int(cfg.get("target_count", 10)),
+                base_url=cfg["base_url"],
+                token=cfg["token"],
+                target_type=cfg["target_type"],
+                target_count=cfg["target_count"],
                 stop_event=stop_event,
                 log_cb=log_cb,
                 config=reg.load_config(),
