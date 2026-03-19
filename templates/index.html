@@ -550,6 +550,7 @@ input:focus, select:focus {
 
 .log-box {
   background: #1a1a1a;
+  border: 1px solid rgba(255,255,255,0.08);
   border-radius: 8px;
   padding: 12px;
   font-family: var(--font-mono);
@@ -561,10 +562,14 @@ input:focus, select:focus {
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
+  scrollbar-width: auto;
+  scrollbar-color: #6b7280 #262626;
 }
 
-.log-box::-webkit-scrollbar { width: 4px; }
-.log-box::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+.log-box::-webkit-scrollbar { width: 10px; }
+.log-box::-webkit-scrollbar-track { background: #262626; border-radius: 8px; }
+.log-box::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 8px; border: 2px solid #262626; }
+.log-box::-webkit-scrollbar-thumb:hover { background: #8b95a7; }
 
 .log-line { padding: 0; }
 .log-line.ok { color: #89d185; }
@@ -878,6 +883,8 @@ input:focus, select:focus {
             <div class="panel-title">实时日志</div>
             <div class="panel-actions">
               <button class="btn btn-sm btn-secondary" id="btn-stop-pool" onclick="stopPoolFill()" disabled>停止补号</button>
+              <button class="btn btn-sm btn-secondary" onclick="scrollLogsTop()">到顶部</button>
+              <button class="btn btn-sm btn-secondary" onclick="scrollLogsBottom()">到底部</button>
               <button class="btn btn-sm btn-secondary" onclick="copyLogs()">复制</button>
               <button class="btn btn-sm btn-secondary" onclick="clearLog()">清空</button>
             </div>
@@ -1031,6 +1038,16 @@ function clearLog() {
   const box = document.getElementById('log-box');
   _logBuffer = [];
   if (box) box.innerHTML = '<span class="log-placeholder">日志已清空</span>';
+}
+
+function scrollLogsTop() {
+  const box = document.getElementById('log-box');
+  if (box) box.scrollTop = 0;
+}
+
+function scrollLogsBottom() {
+  const box = document.getElementById('log-box');
+  if (box) box.scrollTop = box.scrollHeight;
 }
 
 async function copyLogs() {
