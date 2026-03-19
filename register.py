@@ -177,6 +177,7 @@ def run_batch_register(
     log_cb: Callable[[str], None],
     progress_cb: Callable[[int, int, int], None],
     config: Optional[dict] = None,
+    success_cb: Optional[Callable[[str], None]] = None,
 ) -> dict:
     """
     批量注册主函数（在线程中运行，通过回调输出日志）
@@ -224,6 +225,13 @@ def run_batch_register(
                     progress_cb(success_count, fail_count, total)
                 except Exception:
                     pass
+
+        if ok and email and success_cb:
+            try:
+                success_cb(email)
+            except Exception as e:
+                if log_cb:
+                    log_cb(f"[Pool] 单文件上传回调异常: {email}.json - {e}")
 
         return ok, email, err
 
@@ -882,40 +890,74 @@ def _upload_tokens_to_pool(
         return 0
 
     uploaded = 0
-    base = base_url.rstrip("/")
-    upload_headers = {"Authorization": f"Bearer {pool_token}"}
     session = _pool_session(proxy, 10)
     for fname in os.listdir(token_dir):
         if not fname.endswith(".json"):
             continue
         fpath = os.path.join(token_dir, fname)
-        try:
-            with open(fpath, "rb") as f:
-                file_bytes = f.read()
-            r = session.post(
-                f"{base}/v0/management/auth-files",
-                files={"file": (fname, file_bytes, "application/json")},
-                headers=upload_headers,
-                timeout=10,
-            )
-            if r.status_code in (200, 201):
-                uploaded += 1
-                log(f"[Pool] 上传成功: {fname}")
-                uploaded_dir = os.path.join(token_dir, "uploaded")
-                os.makedirs(uploaded_dir, exist_ok=True)
-                os.replace(fpath, os.path.join(uploaded_dir, fname))
-            elif r.status_code == 409:
-                log(f"[Pool] 已存在跳过: {fname}")
-                uploaded_dir = os.path.join(token_dir, "uploaded")
-                os.makedirs(uploaded_dir, exist_ok=True)
-                os.replace(fpath, os.path.join(uploaded_dir, fname))
-            else:
-                log(f"[Pool] 上传失败: {fname} ({r.status_code})")
-        except Exception as e:
-            log(f"[Pool] 上传异常: {fname} - {e}")
+        status = _upload_token_file_to_pool(
+            base_url=base_url,
+            pool_token=pool_token,
+            file_path=fpath,
+            proxy=proxy,
+            log_cb=log_cb,
+            session=session,
+        )
+        if status == "uploaded":
+            uploaded += 1
 
     log(f"[Pool] 上传完成: {uploaded} 个 token")
     return uploaded
+
+
+def _upload_token_file_to_pool(
+    base_url: str,
+    pool_token: str,
+    file_path: str,
+    proxy: str = "",
+    log_cb: Optional[Callable[[str], None]] = None,
+    session: Optional[_requests.Session] = None,
+) -> str:
+    """上传单个 token 文件并在成功或已存在时移入 uploaded/"""
+    def log(msg):
+        if log_cb:
+            log_cb(msg)
+
+    fname = os.path.basename(file_path)
+    token_dir = os.path.dirname(file_path)
+    uploaded_dir = os.path.join(token_dir, "uploaded")
+
+    if not os.path.isfile(file_path):
+        log(f"[Pool] 跳过上传: {fname} 不存在")
+        return "missing"
+
+    base = base_url.rstrip("/")
+    upload_headers = {"Authorization": f"Bearer {pool_token}"}
+    sess = session or _pool_session(proxy, 10)
+    try:
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()
+        r = sess.post(
+            f"{base}/v0/management/auth-files",
+            files={"file": (fname, file_bytes, "application/json")},
+            headers=upload_headers,
+            timeout=10,
+        )
+        if r.status_code in (200, 201):
+            log(f"[Pool] 上传成功: {fname}")
+            os.makedirs(uploaded_dir, exist_ok=True)
+            os.replace(file_path, os.path.join(uploaded_dir, fname))
+            return "uploaded"
+        if r.status_code == 409:
+            log(f"[Pool] 已存在跳过: {fname}")
+            os.makedirs(uploaded_dir, exist_ok=True)
+            os.replace(file_path, os.path.join(uploaded_dir, fname))
+            return "exists"
+        log(f"[Pool] 上传失败: {fname} ({r.status_code})")
+        return "failed"
+    except Exception as e:
+        log(f"[Pool] 上传异常: {fname} - {e}")
+        return "failed"
 
 
 def run_pool_fill(
@@ -952,6 +994,27 @@ def run_pool_fill(
     if fill_count == 0:
         return {"success": 0, "fail": 0, "total": 0, "uploaded": pre_uploaded}
 
+    token_dir = (config or {}).get("token_json_dir", "codex_tokens")
+    if not os.path.isabs(token_dir):
+        token_dir = os.path.join(_BASE_DIR, token_dir)
+    uploaded_count = pre_uploaded
+    upload_lock = threading.Lock()
+
+    def upload_after_success(email: str):
+        nonlocal uploaded_count
+        if not base_url or not pool_token:
+            return
+        status = _upload_token_file_to_pool(
+            base_url=base_url,
+            pool_token=pool_token,
+            file_path=os.path.join(token_dir, f"{email}.json"),
+            proxy=proxy,
+            log_cb=log_cb,
+        )
+        if status == "uploaded":
+            with upload_lock:
+                uploaded_count += 1
+
     cfg_workers = int((config or {}).get("workers") or 3)
     result = run_batch_register(
         count=fill_count,
@@ -961,15 +1024,9 @@ def run_pool_fill(
         log_cb=log_cb,
         progress_cb=progress_cb,
         config=config,
+        success_cb=upload_after_success if (base_url and pool_token) else None,
     )
-
-    registered = result.get("success", 0)
-    if registered > 0 and base_url and pool_token:
-        log("[Pool] 尝试上传新 token 到账号池...")
-        uploaded = _upload_tokens_to_pool(base_url, pool_token, config, proxy, log_cb)
-        result["uploaded"] = uploaded + pre_uploaded
-    else:
-        result["uploaded"] = pre_uploaded
+    result["uploaded"] = uploaded_count
 
     return result
 
@@ -1282,6 +1339,24 @@ def run_pool_maintain_cycle(
             if gap > 0:
                 log(f"[Daemon] 开始注册 {gap} 个账号...")
                 cfg_workers = int((config or {}).get("workers") or 3)
+                token_dir = (config or {}).get("token_json_dir", "codex_tokens")
+                if not os.path.isabs(token_dir):
+                    token_dir = os.path.join(_BASE_DIR, token_dir)
+                upload_lock = threading.Lock()
+
+                def upload_after_success(email: str):
+                    nonlocal uploaded
+                    status = _upload_token_file_to_pool(
+                        base_url=base_url,
+                        pool_token=token,
+                        file_path=os.path.join(token_dir, f"{email}.json"),
+                        proxy=proxy,
+                        log_cb=log_cb,
+                    )
+                    if status == "uploaded":
+                        with upload_lock:
+                            uploaded += 1
+
                 reg_result = run_batch_register(
                     count=gap,
                     workers=min(cfg_workers, gap),
@@ -1290,13 +1365,10 @@ def run_pool_maintain_cycle(
                     log_cb=log_cb,
                     progress_cb=lambda s, f, t: None,
                     config=config,
+                    success_cb=upload_after_success,
                 )
                 registered = reg_result.get("success", 0)
                 log(f"[Daemon] 注册完成: 成功={registered}, 失败={reg_result.get('fail', 0)}")
-
-                if registered > 0 and base_url and token:
-                    log("[Daemon] 上传新 token 到账号池...")
-                    uploaded = _upload_tokens_to_pool(base_url, token, config, proxy, log_cb)
             else:
                 log("[Daemon] 存量补齐，无需注册新账号")
     else:
