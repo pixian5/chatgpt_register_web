@@ -234,6 +234,13 @@ def run_batch_register(
     Returns:
         {"success": int, "fail": int, "total": int}
     """
+    if count <= 0:
+        if log_cb:
+            log_cb("[注册] 数量小于等于 0，跳过执行")
+        return {"success": 0, "fail": 0, "total": 0}
+
+    workers = max(1, int(workers))
+
     mod = _get_cr()
     _apply_config(mod, config or {})
 
@@ -381,7 +388,7 @@ def get_sync_status(
     proxy: str = "",
 ) -> dict:
     """只读：对比本地文件与远程账号，返回每个账号的同步状态"""
-    tokens_dir = os.path.join(_BASE_DIR, "codex_tokens")
+    tokens_dir = _resolve_token_dir(config)
     uploaded_dir = os.path.join(tokens_dir, "uploaded")
 
     # 枚举本地文件
@@ -467,7 +474,7 @@ def sync_local_remote(
         if log_cb:
             log_cb(msg)
 
-    tokens_dir = os.path.join(_BASE_DIR, "codex_tokens")
+    tokens_dir = _resolve_token_dir(config)
     uploaded_dir = os.path.join(tokens_dir, "uploaded")
     os.makedirs(uploaded_dir, exist_ok=True)
 

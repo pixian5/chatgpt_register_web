@@ -217,9 +217,14 @@ async def register_start(body: dict = Body(...)):
         raise HTTPException(status_code=409, detail="已有注册任务运行中")
 
     config = reg.load_config()
-    count = int(body.get("count", 1))
-    workers = int(body.get("workers") or config.get("workers") or reg.DEFAULT_WORKERS)
+    count = _to_int(body.get("count", 1), 1)
+    workers = _to_int(body.get("workers") or config.get("workers") or reg.DEFAULT_WORKERS, reg.DEFAULT_WORKERS)
     proxy = str(body.get("proxy", "")).strip()
+
+    if count <= 0:
+        raise HTTPException(status_code=400, detail="count 必须大于 0")
+    if workers <= 0:
+        raise HTTPException(status_code=400, detail="workers 必须大于 0")
 
     # 重置状态
     _reg_state.update({
@@ -265,7 +270,6 @@ async def register_stop():
     stop_event = _reg_state.get("stop_event")
     if stop_event:
         stop_event.set()
-    _reg_state["running"] = False
     return {"ok": True}
 
 
@@ -414,13 +418,16 @@ async def pool_fill(body: dict = Body(...)):
     if _pool_state["running"]:
         raise HTTPException(status_code=409, detail="已有池任务运行中")
 
-    count = int(body.get("count", 1))
+    count = _to_int(body.get("count", 1), 1)
     base_url = body.get("base_url", "").strip()
     pool_token = body.get("token", "").strip()
     proxy = body.get("proxy", "").strip()
     target_type = body.get("target_type", reg.DEFAULT_POOL_TARGET_TYPE)
-    target_count = int(body.get("target_count", 0))
+    target_count = _to_int(body.get("target_count", 0), 0, minimum=0)
     config = reg.load_config()
+
+    if count <= 0:
+        raise HTTPException(status_code=400, detail="count 必须大于 0")
 
     _pool_state["running"] = True
     _pool_state["task"] = "fill"

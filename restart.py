@@ -8,17 +8,16 @@ import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 VENV_PY = os.path.join(ROOT, ".venv", "bin", "python")
-VENV_UVICORN = os.path.join(ROOT, ".venv", "bin", "uvicorn")
 LOG_PATH = os.path.join(ROOT, "uvicorn.log")
 
 
 def _pick_python():
-    return VENV_PY if os.path.exists(VENV_PY) else sys.executable
+    if sys.executable and os.path.exists(sys.executable):
+        return sys.executable
+    return VENV_PY if os.path.exists(VENV_PY) else "python3"
 
 
 def _uvicorn_cmd():
-    if os.path.exists(VENV_UVICORN):
-        return [VENV_UVICORN]
     return [_pick_python(), "-m", "uvicorn"]
 
 
