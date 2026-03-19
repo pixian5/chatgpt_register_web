@@ -9,20 +9,22 @@
 
 :root {
   --left-w: 300px;
-  --blue: #007AFF;
-  --green: #34C759;
-  --red: #FF3B30;
-  --orange: #FF9500;
-  --bg: #F2F2F7;
-  --card-bg: #FFFFFF;
-  --left-bg: #FFFFFF;
-  --text-primary: #1C1C1E;
-  --text-secondary: #6C6C70;
-  --text-tertiary: #AEAEB2;
-  --separator: rgba(60,60,67,0.13);
-  --radius-card: 12px;
+  --blue: #0a84ff;
+  --blue-strong: #0057d8;
+  --green: #2fb364;
+  --red: #ff5e57;
+  --orange: #ff9f0a;
+  --bg: #eef3fb;
+  --card-bg: rgba(255,255,255,0.88);
+  --left-bg: rgba(255,255,255,0.9);
+  --text-primary: #162033;
+  --text-secondary: #556074;
+  --text-tertiary: #8e99ab;
+  --separator: rgba(89, 106, 134, 0.16);
+  --radius-card: 20px;
   --radius-btn: 8px;
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.05);
+  --shadow-card: 0 18px 45px rgba(52, 72, 102, 0.10), 0 2px 10px rgba(52, 72, 102, 0.06);
+  --shadow-panel: 0 30px 60px rgba(20, 34, 60, 0.12);
   --font: -apple-system, "SF Pro Display", BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "SF Mono", "Fira Code", Consolas, monospace;
   --transition: 0.15s ease;
@@ -30,21 +32,27 @@
 
 body {
   font-family: var(--font);
-  background: var(--bg);
+  background:
+    radial-gradient(circle at top left, rgba(10,132,255,0.14), transparent 34%),
+    radial-gradient(circle at top right, rgba(47,179,100,0.14), transparent 26%),
+    linear-gradient(180deg, #f7faff 0%, var(--bg) 52%, #eaf0f9 100%);
   color: var(--text-primary);
   display: flex;
   height: 100vh;
   overflow: hidden;
   font-size: 14px;
   line-height: 1.5;
+  padding: 18px;
 }
 
 /* ─── Layout ─── */
 .app-layout {
   display: flex;
-  width: 100%;
-  height: 100vh;
+  width: min(100%, 1680px);
+  height: calc(100vh - 36px);
   overflow: hidden;
+  margin: 0 auto;
+  gap: 18px;
 }
 
 /* ─── Left Panel ─── */
@@ -52,34 +60,43 @@ body {
   width: var(--left-w);
   min-width: var(--left-w);
   background: var(--left-bg);
-  border-right: 1px solid var(--separator);
+  border: 1px solid rgba(255,255,255,0.52);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-radius: 28px;
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(18px);
 }
 
 .left-header {
-  padding: 18px 16px 14px;
+  padding: 20px 18px 16px;
   border-bottom: 1px solid var(--separator);
   flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .app-name {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--text-primary);
+  letter-spacing: 0.01em;
 }
 
 .app-version {
   font-size: 11px;
   color: var(--text-tertiary);
-  margin-top: 2px;
+  margin-top: 4px;
+  line-height: 1.4;
 }
 
 .left-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -89,9 +106,10 @@ body {
 .left-body::-webkit-scrollbar-thumb { background: var(--separator); border-radius: 2px; }
 
 .left-footer {
-  padding: 14px 16px;
+  padding: 16px 18px 18px;
   border-top: 1px solid var(--separator);
   flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0.92));
 }
 
 /* ─── Settings Sections ─── */
@@ -99,6 +117,11 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,0.58);
+  background: rgba(255,255,255,0.56);
+  border-radius: 18px;
+  box-shadow: 0 10px 24px rgba(94, 115, 144, 0.06);
 }
 
 .section-label {
@@ -137,7 +160,7 @@ select {
   border-radius: var(--radius-btn);
   font-size: 13px;
   font-family: var(--font);
-  background: var(--bg);
+  background: rgba(255,255,255,0.84);
   color: var(--text-primary);
   outline: none;
   transition: border-color var(--transition), box-shadow var(--transition);
@@ -201,19 +224,20 @@ input:focus, select:focus {
 .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; }
 .btn-full { width: 100%; }
 .btn-primary { background: var(--blue); color: #fff; }
-.btn-success { background: var(--green); color: #fff; }
-.btn-danger { background: var(--red); color: #fff; }
-.btn-secondary { background: rgba(60,60,67,0.10); color: var(--text-primary); }
+.btn-primary { background: linear-gradient(135deg, var(--blue) 0%, var(--blue-strong) 100%); color: #fff; box-shadow: 0 10px 24px rgba(10,132,255,0.22); }
+.btn-success { background: linear-gradient(135deg, #32c36c 0%, #209d53 100%); color: #fff; }
+.btn-danger { background: linear-gradient(135deg, #ff6e67 0%, #f0463f 100%); color: #fff; }
+.btn-secondary { background: rgba(93, 109, 137, 0.12); color: var(--text-primary); }
 .btn-sm { padding: 5px 11px; font-size: 12px; }
 
 /* ─── Right Panel ─── */
 .right-panel {
   flex: 1;
   overflow: hidden;
-  padding: 16px 20px;
+  padding: 6px 4px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
 }
 
@@ -221,8 +245,10 @@ input:focus, select:focus {
 .card {
   background: var(--card-bg);
   border-radius: var(--radius-card);
-  padding: 14px 16px;
+  padding: 16px 18px;
   box-shadow: var(--shadow-card);
+  border: 1px solid rgba(255,255,255,0.55);
+  backdrop-filter: blur(16px);
 }
 
 .card-header {
@@ -472,6 +498,59 @@ input:focus, select:focus {
 .pool-card { flex: 0 0 260px; }
 .maint-card { flex: 1; min-width: 160px; }
 
+.mobile-topbar,
+.drawer-scrim,
+.left-close-btn {
+  display: none;
+}
+
+.mobile-topbar {
+  width: min(100%, 1680px);
+  margin: 0 auto 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 22px;
+  background: rgba(255,255,255,0.76);
+  border: 1px solid rgba(255,255,255,0.58);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(16px);
+}
+
+.mobile-brand {
+  min-width: 0;
+}
+
+.mobile-brand-kicker {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.mobile-brand-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.mobile-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.icon-btn {
+  border: none;
+  border-radius: 999px;
+  background: rgba(93, 109, 137, 0.12);
+  color: var(--text-primary);
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 /* ─── Accounts List ─── */
 .accounts-table-wrap {
   flex: 1;
@@ -479,6 +558,63 @@ input:focus, select:focus {
   overflow-x: auto;
   overflow-y: auto;
   margin-top: 8px;
+}
+.accounts-mobile-list {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+.account-mobile-card {
+  border-radius: 16px;
+  border: 1px solid rgba(93, 109, 137, 0.14);
+  background: rgba(246, 249, 255, 0.92);
+  padding: 12px;
+  box-shadow: 0 12px 24px rgba(93, 109, 137, 0.08);
+}
+.account-mobile-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.account-mobile-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.account-mobile-type {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.account-mobile-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 10px;
+}
+.account-mobile-meta-item {
+  border-radius: 12px;
+  background: rgba(255,255,255,0.75);
+  padding: 8px 10px;
+}
+.account-mobile-meta-label {
+  display: block;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 3px;
+}
+.account-mobile-meta-value {
+  display: block;
+  font-size: 12px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  word-break: break-all;
 }
 .accounts-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .accounts-table thead th {
@@ -608,9 +744,231 @@ input:focus, select:focus {
 /* ─── Save button feedback ─── */
 .save-success { color: var(--green) !important; }
 .save-error { color: var(--red) !important; }
+
+@media (max-width: 980px) {
+  body {
+    display: block;
+    min-height: 100dvh;
+    height: auto;
+    overflow: auto;
+    padding: 12px;
+  }
+
+  body.drawer-open {
+    overflow: hidden;
+  }
+
+  .mobile-topbar {
+    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  .app-layout {
+    display: block;
+    height: auto;
+    min-height: calc(100dvh - 84px);
+    gap: 0;
+    overflow: visible;
+  }
+
+  .drawer-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 40, 0.36);
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 39;
+  }
+
+  body.drawer-open .drawer-scrim {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .left-panel {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    bottom: 10px;
+    width: min(88vw, 360px);
+    min-width: 0;
+    transform: translateX(calc(-100% - 20px));
+    transition: transform 0.24s ease;
+    z-index: 40;
+    border-radius: 28px;
+  }
+
+  body.drawer-open .left-panel {
+    transform: translateX(0);
+  }
+
+  .left-close-btn {
+    display: inline-flex;
+  }
+
+  .left-body {
+    padding: 16px;
+    gap: 14px;
+  }
+
+  .left-footer {
+    padding: 14px 16px 16px;
+  }
+
+  .right-panel {
+    padding: 0;
+    overflow: visible;
+  }
+
+  .top-row {
+    flex-direction: column;
+  }
+
+  .top-row > .card,
+  .pool-card,
+  .maint-card {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .card,
+  #panel-card {
+    min-height: 0;
+  }
+
+  .card-header,
+  .panel-header,
+  .panel-actions,
+  .daemon-row,
+  .pool-main-row,
+  .pool-meta,
+  .inspect-actions,
+  .running-status-row,
+  .countdown-bar {
+    flex-wrap: wrap;
+  }
+
+  .field-row {
+    flex-direction: column;
+  }
+
+  .pool-count-text {
+    font-size: 18px;
+  }
+
+  .pool-meta {
+    gap: 10px 14px;
+  }
+
+  .tab-bar {
+    width: 100%;
+  }
+
+  .tab-btn {
+    flex: 1;
+    text-align: center;
+  }
+
+  .panel-actions {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .panel-actions .btn {
+    flex: 1 1 calc(50% - 8px);
+  }
+
+  .accounts-table th,
+  .accounts-table td {
+    white-space: nowrap;
+  }
+
+  .accounts-mobile-list {
+    display: flex;
+  }
+
+  .log-box {
+    min-height: 42dvh;
+    max-height: 64dvh;
+  }
+}
+
+@media (max-width: 640px) {
+  body {
+    padding: 10px;
+  }
+
+  .mobile-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mobile-actions {
+    width: 100%;
+  }
+
+  .mobile-actions .btn {
+    flex: 1;
+  }
+
+  .card {
+    padding: 15px;
+    border-radius: 18px;
+  }
+
+  .card-header {
+    gap: 10px;
+  }
+
+  .card-title,
+  .panel-title,
+  .section-label {
+    letter-spacing: 0.08em;
+  }
+
+  .toggle-wrap,
+  .daemon-interval-wrap {
+    width: 100%;
+  }
+
+  .daemon-interval-wrap input {
+    width: 100%;
+    max-width: 96px;
+  }
+
+  .btn,
+  .btn-sm {
+    min-height: 38px;
+  }
+
+  .panel-actions .btn {
+    flex-basis: 100%;
+  }
+
+  .account-mobile-meta {
+    grid-template-columns: 1fr;
+  }
+}
 </style>
 </head>
 <body>
+<div class="mobile-topbar">
+  <div class="mobile-brand">
+    <div class="mobile-brand-kicker">Responsive Console</div>
+    <div class="mobile-brand-title">pam管理</div>
+  </div>
+  <div class="mobile-actions">
+    <button class="btn btn-sm btn-secondary" type="button" onclick="switchToLogs()">日志</button>
+    <button class="btn btn-sm btn-primary" type="button" onclick="toggleSettingsDrawer()">设置</button>
+  </div>
+</div>
+<div class="drawer-scrim" onclick="closeSettingsDrawer()"></div>
 <div class="app-layout">
 
   <!-- ══════════════════════════════════════════
@@ -618,7 +976,11 @@ input:focus, select:focus {
   ══════════════════════════════════════════ -->
   <aside class="left-panel">
     <div class="left-header">
-      <div class="app-name">pam管理</div>
+      <div>
+        <div class="app-name">pam管理</div>
+        <div class="app-version">统一支持桌面与手机版操作</div>
+      </div>
+      <button class="icon-btn left-close-btn" type="button" onclick="closeSettingsDrawer()">关闭</button>
     </div>
 
     <div class="left-body">
@@ -889,6 +1251,7 @@ input:focus, select:focus {
           </div>
           <div id="accounts-body">
             <div id="accounts-loading" style="display:none;color:var(--text-tertiary);font-size:13px">加载中...</div>
+            <div class="accounts-mobile-list" id="accounts-mobile-list" style="display:none"></div>
             <div class="accounts-table-wrap" id="accounts-table-wrap" style="display:none">
               <table class="accounts-table">
                 <thead><tr><th>#</th><th>账号名称</th><th>类型</th><th>状态</th><th>位置</th></tr></thead>
@@ -952,6 +1315,8 @@ const APP_DEFAULTS = Object.freeze({
   regonly_count: 5,
 });
 
+const MOBILE_LAYOUT_QUERY = '(max-width: 980px)';
+
 // ════════════════════════════════════════════════════════════════
 // 工具函数
 // ════════════════════════════════════════════════════════════════
@@ -964,6 +1329,22 @@ function fmtSec(s) {
 
 function _getAppDefault(key) {
   return Object.prototype.hasOwnProperty.call(APP_DEFAULTS, key) ? APP_DEFAULTS[key] : '';
+}
+
+function _isMobileLayout() {
+  return window.matchMedia(MOBILE_LAYOUT_QUERY).matches;
+}
+
+function toggleSettingsDrawer(forceOpen) {
+  if (!_isMobileLayout()) return;
+  const shouldOpen = typeof forceOpen === 'boolean'
+    ? forceOpen
+    : !document.body.classList.contains('drawer-open');
+  document.body.classList.toggle('drawer-open', shouldOpen);
+}
+
+function closeSettingsDrawer() {
+  toggleSettingsDrawer(false);
 }
 
 function applyUiDefaults() {
@@ -1225,6 +1606,7 @@ function setTab(tabName) {
   panels.forEach((panel) => {
     panel.classList.toggle('active', panel.id === `tab-${tabName}`);
   });
+  if (_isMobileLayout()) closeSettingsDrawer();
 }
 
 function switchToLogs() {
@@ -1389,6 +1771,7 @@ async function saveSettings() {
     if (r.ok) {
       // 保存成功后同步 _savedConfig，使前端操作立即使用新配置
       _syncSavedConfig(cfg);
+      if (_isMobileLayout()) closeSettingsDrawer();
       // 目标数量变化时刷新池状态（更新缺口显示）
       if (_savedConfig.target_count !== prevTargetCount) {
         refreshPoolStatus();
@@ -1887,6 +2270,7 @@ function _accountsConfigKey() {
 function _renderAccounts(data) {
   const loading = document.getElementById('accounts-loading');
   const tableWrap = document.getElementById('accounts-table-wrap');
+  const mobileList = document.getElementById('accounts-mobile-list');
   const emptyEl = document.getElementById('accounts-empty');
   const tbody = document.getElementById('accounts-tbody');
 
@@ -1897,6 +2281,7 @@ function _renderAccounts(data) {
     emptyEl.textContent = '暂无账号';
     emptyEl.style.display = '';
     tableWrap.style.display = 'none';
+    if (mobileList) mobileList.style.display = 'none';
     return;
   }
 
@@ -1915,15 +2300,43 @@ function _renderAccounts(data) {
   };
 
   tbody.innerHTML = '';
+  if (mobileList) mobileList.innerHTML = '';
   accounts.forEach((acc, i) => {
     const tr = document.createElement('tr');
     const badge = statusBadge[acc.status] || `<span class="badge badge-gray">${acc.status}</span>`;
     const loc = locationLabel[acc.location] || acc.location || '—';
     tr.innerHTML = `<td>${i + 1}</td><td>${acc.name || '—'}</td><td>${acc.type || '—'}</td><td>${badge}</td><td style="font-family:var(--font-mono);font-size:11px">${loc}</td>`;
     tbody.appendChild(tr);
+
+    if (mobileList) {
+      const card = document.createElement('div');
+      card.className = 'account-mobile-card';
+      card.innerHTML = `
+        <div class="account-mobile-head">
+          <div>
+            <div class="account-mobile-type">${acc.type || '—'}</div>
+            <div class="account-mobile-name">${acc.name || '—'}</div>
+          </div>
+          <div>${badge}</div>
+        </div>
+        <div class="account-mobile-meta">
+          <div class="account-mobile-meta-item">
+            <span class="account-mobile-meta-label">序号</span>
+            <span class="account-mobile-meta-value">${i + 1}</span>
+          </div>
+          <div class="account-mobile-meta-item">
+            <span class="account-mobile-meta-label">位置</span>
+            <span class="account-mobile-meta-value">${loc}</span>
+          </div>
+        </div>
+      `;
+      mobileList.appendChild(card);
+    }
   });
   emptyEl.style.display = 'none';
-  tableWrap.style.display = '';
+  const showMobile = _isMobileLayout();
+  tableWrap.style.display = showMobile ? 'none' : '';
+  if (mobileList) mobileList.style.display = showMobile ? 'flex' : 'none';
 }
 
 function refreshAccounts() {
@@ -1941,10 +2354,12 @@ async function loadSyncStatus() {
 
   const loading = document.getElementById('accounts-loading');
   const tableWrap = document.getElementById('accounts-table-wrap');
+  const mobileList = document.getElementById('accounts-mobile-list');
   const emptyEl = document.getElementById('accounts-empty');
 
   loading.style.display = '';
   tableWrap.style.display = 'none';
+  if (mobileList) mobileList.style.display = 'none';
   emptyEl.style.display = 'none';
 
   try {
@@ -2011,6 +2426,13 @@ async function doSync() {
 (async function init() {
   initTabs();
   applyUiDefaults();
+  window.addEventListener('resize', () => {
+    if (!_isMobileLayout()) closeSettingsDrawer();
+    if (_accountsCache) _renderAccounts(_accountsCache);
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSettingsDrawer();
+  });
   await loadSettings();
   connectPoolWs();
 
