@@ -658,11 +658,11 @@ input:focus, select:focus {
         <div class="field-row">
           <div class="field-group">
             <label>账号类型</label>
-            <input type="text" id="cfg-pool-type" placeholder="codex">
+            <input type="text" id="cfg-pool-type" data-default-placeholder="target_type">
           </div>
           <div class="field-group">
             <label>目标数量</label>
-            <input type="number" id="cfg-pool-target" min="1" placeholder="100">
+            <input type="number" id="cfg-pool-target" min="1" data-default-placeholder="target_count">
           </div>
         </div>
       </div>
@@ -676,7 +676,7 @@ input:focus, select:focus {
         </div>
         <div class="field-group">
           <label>并发数</label>
-          <input type="number" id="cfg-workers" min="1" max="20" placeholder="1">
+          <input type="number" id="cfg-workers" min="1" max="20" data-default-placeholder="workers">
         </div>
       </div>
 
@@ -686,16 +686,16 @@ input:focus, select:focus {
         <div class="field-row">
           <div class="field-group">
             <label>池探测并发</label>
-            <input type="number" id="cfg-pool-probe-workers" min="1" max="100" placeholder="20">
+            <input type="number" id="cfg-pool-probe-workers" min="1" max="100" data-default-placeholder="pool_probe_workers">
           </div>
           <div class="field-group">
             <label>池删除并发</label>
-            <input type="number" id="cfg-pool-delete-workers" min="1" max="100" placeholder="10">
+            <input type="number" id="cfg-pool-delete-workers" min="1" max="100" data-default-placeholder="pool_delete_workers">
           </div>
         </div>
         <div class="field-group">
           <label>代理测试并发</label>
-          <input type="number" id="cfg-proxy-test-workers" min="1" max="100" placeholder="20">
+          <input type="number" id="cfg-proxy-test-workers" min="1" max="100" data-default-placeholder="proxy_test_workers">
         </div>
       </div>
 
@@ -752,7 +752,7 @@ input:focus, select:focus {
       </div>
       <div class="pool-status-content">
         <div class="pool-main-row">
-          <span class="pool-type-badge" id="pool-type-badge">codex</span>
+          <span class="pool-type-badge" id="pool-type-badge" data-default-text="target_type"></span>
           <span class="pool-count-text">
             <span id="pool-valid">—</span><span style="color:var(--text-tertiary);font-weight:400;font-size:16px">/</span><span id="pool-target-disp">—</span>
           </span>
@@ -817,7 +817,7 @@ input:focus, select:focus {
             <span class="daemon-status-text" id="daemon-status-label">已停止</span>
           </div>
           <div class="daemon-interval-wrap">
-            每 <input type="number" id="daemon-interval" min="1" placeholder="30"> 分钟执行一次
+            每 <input type="number" id="daemon-interval" min="1" data-default-placeholder="pool_interval_min"> 分钟执行一次
           </div>
         </div>
         <div id="daemon-countdown-row" class="countdown-bar" style="display:none">
@@ -843,7 +843,7 @@ input:focus, select:focus {
       <div id="regonly-input" style="display:none">
         <div class="field-group" style="margin-bottom:10px">
           <label>注册数量</label>
-          <input type="number" id="regonly-count" value="5" min="1" max="500">
+          <input type="number" id="regonly-count" min="1" max="500" data-default-value="regonly_count">
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-success btn-sm" onclick="confirmRegOnly()">开始注册</button>
@@ -937,8 +937,9 @@ let _poolTaskRunning = false;
 let _poolTaskName = '';
 let _daemonRunningNow = false;
 let _poolStopRequested = false;
-let _sharedRegSuccessMode = '';
+let _sharedRegStatsMode = '';
 let _sharedRegSuccessCount = 0;
+let _sharedRegFailCount = 0;
 const LOG_BUFFER_MAX = 5000;
 const APP_DEFAULTS = Object.freeze({
   target_type: 'codex',
@@ -959,6 +960,25 @@ function fmtSec(s) {
   const m = Math.floor(s / 60);
   const sec = s % 60;
   return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+
+function _getAppDefault(key) {
+  return Object.prototype.hasOwnProperty.call(APP_DEFAULTS, key) ? APP_DEFAULTS[key] : '';
+}
+
+function applyUiDefaults() {
+  document.querySelectorAll('[data-default-placeholder]').forEach((el) => {
+    const value = _getAppDefault(el.dataset.defaultPlaceholder);
+    if (value !== '') el.placeholder = String(value);
+  });
+  document.querySelectorAll('[data-default-value]').forEach((el) => {
+    const value = _getAppDefault(el.dataset.defaultValue);
+    if (value !== '' && !el.value) el.value = String(value);
+  });
+  document.querySelectorAll('[data-default-text]').forEach((el) => {
+    const value = _getAppDefault(el.dataset.defaultText);
+    if (value !== '' && !el.textContent.trim()) el.textContent = String(value);
+  });
 }
 
 // 已保存到服务端的配置（只在 loadSettings/saveSettings 成功后更新）
@@ -1011,32 +1031,47 @@ function _incFillSuccess() {
 function _renderSharedRegSuccess() {
   const el = document.getElementById('regonly-shared-success');
   if (!el) return;
-  if (!_sharedRegSuccessMode) {
+  if (!_sharedRegStatsMode) {
     el.textContent = '';
     el.style.display = 'none';
     return;
   }
-  const label = _sharedRegSuccessMode === 'daemon' ? '守护补号' : '手动补号';
-  el.textContent = `${label}注册成功账号数量：${_sharedRegSuccessCount}`;
+  const label = _sharedRegStatsMode === 'daemon' ? '守护补号' : '手动补号';
+  el.textContent = `${label}注册结果：成功 ${_sharedRegSuccessCount}，失败 ${_sharedRegFailCount}`;
   el.style.display = '';
 }
 
 function _startSharedRegSuccess(mode) {
-  _sharedRegSuccessMode = mode;
+  _sharedRegStatsMode = mode;
   _sharedRegSuccessCount = 0;
+  _sharedRegFailCount = 0;
   _renderSharedRegSuccess();
 }
 
 function _clearSharedRegSuccess(mode = '') {
-  if (mode && _sharedRegSuccessMode !== mode) return;
-  _sharedRegSuccessMode = '';
+  if (mode && _sharedRegStatsMode !== mode) return;
+  _sharedRegStatsMode = '';
   _sharedRegSuccessCount = 0;
+  _sharedRegFailCount = 0;
   _renderSharedRegSuccess();
 }
 
 function _incSharedRegSuccess(mode) {
-  if (_sharedRegSuccessMode !== mode) return;
+  if (_sharedRegStatsMode !== mode) return;
   _sharedRegSuccessCount += 1;
+  _renderSharedRegSuccess();
+}
+
+function _incSharedRegFail(mode) {
+  if (_sharedRegStatsMode !== mode) return;
+  _sharedRegFailCount += 1;
+  _renderSharedRegSuccess();
+}
+
+function _syncSharedRegResult(mode, success, fail) {
+  if (_sharedRegStatsMode !== mode) return;
+  _sharedRegSuccessCount = success;
+  _sharedRegFailCount = fail;
   _renderSharedRegSuccess();
 }
 
@@ -1052,6 +1087,8 @@ function appendLog(msg) {
   const box = document.getElementById('log-box');
   if (!box) return;
   const shouldAutoScroll = (box.scrollHeight - box.scrollTop - box.clientHeight) <= 8;
+  const manualFillSummary = msg.match(/^\[Pool\] 补号完成: 成功=(\d+), 失败=(\d+)/);
+  const daemonFillSummary = msg.match(/^\[Daemon\] 注册完成: 成功=(\d+), 失败=(\d+)/);
   _logBuffer.push(msg);
   if (_logBuffer.length > LOG_BUFFER_MAX) _logBuffer.shift();
   // 清除占位符
@@ -1082,6 +1119,13 @@ function appendLog(msg) {
   if (msg.startsWith('[Daemon] 开始注册 ')) {
     _startSharedRegSuccess('daemon');
   }
+  if (manualFillSummary) {
+    _syncSharedRegResult('manual_fill', Number(manualFillSummary[1]), Number(manualFillSummary[2]));
+  }
+  if (daemonFillSummary) {
+    if (_sharedRegStatsMode !== 'daemon') _startSharedRegSuccess('daemon');
+    _syncSharedRegResult('daemon', Number(daemonFillSummary[1]), Number(daemonFillSummary[2]));
+  }
 
   if (_inspectState === 'running') {
     const runningMsg = document.getElementById('running-msg');
@@ -1090,11 +1134,17 @@ function appendLog(msg) {
       _incSharedRegSuccess('manual_fill');
       refreshAccounts();
     }
+    if (runningMsg && runningMsg.textContent.includes('步骤 2/2') && msg.includes('注册失败:')) {
+      _incSharedRegFail('manual_fill');
+    }
   }
 
-  if (_sharedRegSuccessMode === 'daemon' && msg.includes('注册成功')) {
+  if (_sharedRegStatsMode === 'daemon' && msg.includes('注册成功')) {
     _incSharedRegSuccess('daemon');
     refreshAccounts();
+  }
+  if (_sharedRegStatsMode === 'daemon' && msg.includes('注册失败:')) {
+    _incSharedRegFail('daemon');
   }
 
   if (msg.includes('[Pool] 上传成功:') || msg.includes('[Pool] 已存在跳过:')) {
@@ -1512,6 +1562,7 @@ function _showInspectPanel(state) {
 async function startInspect(options = {}) {
   const autoFill = options.autoFill !== false;
   _poolStopRequested = false;
+  _clearSharedRegSuccess('manual_fill');
   const { base_url, token, target_type, target_count, proxy } = getPoolConfig();
   if (!base_url || !token) {
     appendLog('[提示] 请先在左栏填写 CliProxyAPI URL 和 Token');
@@ -1958,6 +2009,7 @@ async function doSync() {
 // ════════════════════════════════════════════════════════════════
 (async function init() {
   initTabs();
+  applyUiDefaults();
   await loadSettings();
   connectPoolWs();
 
