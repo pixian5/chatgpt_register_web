@@ -903,6 +903,7 @@ let _daemonLocalTimer = null; // 每秒递减倒计时
 let _daemonPollTimer = null;  // 每5秒同步后端
 let _logBuffer = [];
 let _fillSuccessCount = 0;
+let _poolRefreshTimer = null;
 const LOG_BUFFER_MAX = 5000;
 
 // ════════════════════════════════════════════════════════════════
@@ -971,6 +972,14 @@ function _incFillSuccess() {
   }
 }
 
+function scheduleRefreshPoolStatus(delay = 150) {
+  if (_poolRefreshTimer) clearTimeout(_poolRefreshTimer);
+  _poolRefreshTimer = setTimeout(() => {
+    _poolRefreshTimer = null;
+    refreshPoolStatus();
+  }, delay);
+}
+
 function appendLog(msg) {
   const box = document.getElementById('log-box');
   if (!box) return;
@@ -1005,6 +1014,10 @@ function appendLog(msg) {
       _incFillSuccess();
       refreshAccounts();
     }
+  }
+
+  if (msg.includes('[Pool] 上传成功:') || msg.includes('[Pool] 已存在跳过:')) {
+    scheduleRefreshPoolStatus();
   }
 }
 
