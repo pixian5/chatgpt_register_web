@@ -209,7 +209,7 @@ def run_batch_register(
         old_stdout = sys.stdout
         sys.stdout = capture
         try:
-            ok, email, err = mod._register_one(idx, total, effective_proxy, output_file)
+            ok, email, err = mod._register_one(idx, total, effective_proxy, output_file, stop_event=stop_event)
         except Exception as e:
             ok, email, err = False, None, str(e)
         finally:

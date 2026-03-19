@@ -807,8 +807,9 @@ class ChatGPTRegister:
     BASE = "https://chatgpt.com"
     AUTH = "https://auth.openai.com"
 
-    def __init__(self, proxy: str = None, tag: str = ""):
+    def __init__(self, proxy: str = None, tag: str = "", stop_event=None):
         self.tag = tag  # 线程标识，用于日志
+        self.stop_event = stop_event
         self.device_id = str(uuid.uuid4())
         self.auth_session_logging_id = str(uuid.uuid4())
         self.impersonate, self.chrome_major, self.chrome_full, self.ua, self.sec_ch_ua = _random_chrome_version()
@@ -856,6 +857,21 @@ class ChatGPTRegister:
         prefix = f"[{self.tag}] " if self.tag else ""
         with _print_lock:
             print(f"{prefix}{msg}")
+
+    def _is_stopped(self) -> bool:
+        return bool(self.stop_event and self.stop_event.is_set())
+
+    def _raise_if_stopped(self):
+        if self._is_stopped():
+            self._print("[STOP] 收到停止请求")
+            raise Exception("已停止")
+
+    def _sleep_with_stop(self, seconds: float, step: float = 0.2):
+        deadline = time.time() + max(0.0, seconds)
+        while time.time() < deadline:
+            self._raise_if_stopped()
+            remaining = deadline - time.time()
+            time.sleep(min(step, max(0.0, remaining)))
 
     # ==================== DuckMail 临时邮箱 ====================
 
@@ -1017,6 +1033,7 @@ class ChatGPTRegister:
         since_ts = since_ts or start_time
 
         while time.time() - start_time < timeout:
+            self._raise_if_stopped()
             messages = _filter_messages(
                 self._fetch_emails_duckmail(mail_token),
                 since_ts=since_ts,
@@ -1039,7 +1056,7 @@ class ChatGPTRegister:
 
             elapsed = int(time.time() - start_time)
             self._print(f"[OTP] 等待中... ({elapsed}s/{timeout}s)")
-            time.sleep(3)
+            self._sleep_with_stop(3)
 
         self._print(f"[OTP] 超时 ({timeout}s)")
         return None
@@ -1158,16 +1175,17 @@ class ChatGPTRegister:
 
     def run_register(self, email, password, name, birthdate, mail_token):
         """使用 DuckMail 的注册流程"""
+        self._raise_if_stopped()
         self.visit_homepage()
-        _random_delay(0.3, 0.8)
+        self._sleep_with_stop(random.uniform(0.3, 0.8))
         csrf = self.get_csrf()
-        _random_delay(0.2, 0.5)
+        self._sleep_with_stop(random.uniform(0.2, 0.5))
         auth_url = self.signin(email, csrf)
-        _random_delay(0.3, 0.8)
+        self._sleep_with_stop(random.uniform(0.3, 0.8))
 
         final_url = self.authorize(auth_url)
         final_path = urlparse(final_url).path
-        _random_delay(0.3, 0.8)
+        self._sleep_with_stop(random.uniform(0.3, 0.8))
 
         self._print(f"Authorize → {final_path}")
 
@@ -1176,12 +1194,12 @@ class ChatGPTRegister:
 
         if "create-account/password" in final_path:
             self._print("全新注册流程")
-            _random_delay(0.5, 1.0)
+            self._sleep_with_stop(random.uniform(0.5, 1.0))
             status, data = self.register(email, password)
             if status != 200:
                 raise Exception(f"Register 失败 ({status}): {data}")
             # register 之后可能还需要 send_otp（全新注册流程中 OTP 不一定在 authorize 时发送）
-            _random_delay(0.3, 0.8)
+            self._sleep_with_stop(random.uniform(0.3, 0.8))
             self.send_otp()
             otp_since = time.time() - 2
             need_otp = True
@@ -1192,9 +1210,9 @@ class ChatGPTRegister:
             need_otp = True
         elif "about-you" in final_path:
             self._print("跳到填写信息阶段")
-            _random_delay(0.5, 1.0)
+            self._sleep_with_stop(random.uniform(0.5, 1.0))
             self.create_account(name, birthdate)
-            _random_delay(0.3, 0.5)
+            self._sleep_with_stop(random.uniform(0.3, 0.5))
             self.callback()
             return True
         elif "callback" in final_path or "chatgpt.com" in final_url:
@@ -1213,26 +1231,26 @@ class ChatGPTRegister:
             if not otp_code:
                 raise Exception("未能获取验证码")
 
-            _random_delay(0.3, 0.8)
+            self._sleep_with_stop(random.uniform(0.3, 0.8))
             status, data = self.validate_otp(otp_code)
             if status != 200:
                 self._print("验证码失败，重试...")
                 self.send_otp()
                 otp_since = time.time() - 2
-                _random_delay(1.0, 2.0)
+                self._sleep_with_stop(random.uniform(1.0, 2.0))
                 otp_code = self.wait_for_verification_email(mail_token, timeout=60, since_ts=otp_since)
                 if not otp_code:
                     raise Exception("重试后仍未获取验证码")
-                _random_delay(0.3, 0.8)
+                self._sleep_with_stop(random.uniform(0.3, 0.8))
                 status, data = self.validate_otp(otp_code)
                 if status != 200:
                     raise Exception(f"验证码失败 ({status}): {data}")
 
-        _random_delay(0.5, 1.5)
+        self._sleep_with_stop(random.uniform(0.5, 1.5))
         status, data = self.create_account(name, birthdate)
         if status != 200:
             raise Exception(f"Create account 失败 ({status}): {data}")
-        _random_delay(0.2, 0.5)
+        self._sleep_with_stop(random.uniform(0.2, 0.5))
         self.callback()
         return True
 
@@ -1727,6 +1745,7 @@ class ChatGPTRegister:
             otp_deadline = time.time() + 120
 
             while time.time() < otp_deadline and not otp_success:
+                self._raise_if_stopped()
                 messages = _filter_messages(
                     self._fetch_emails_duckmail(mail_token),
                     since_ts=otp_since,
@@ -1749,7 +1768,7 @@ class ChatGPTRegister:
                 if not candidate_codes:
                     elapsed = int(120 - max(0, otp_deadline - time.time()))
                     self._print(f"[OAuth] OTP 等待中... ({elapsed}s/120s)")
-                    time.sleep(2)
+                    self._sleep_with_stop(2)
                     continue
 
                 for otp_code in candidate_codes:
@@ -1786,7 +1805,7 @@ class ChatGPTRegister:
                     break
 
                 if not otp_success:
-                    time.sleep(2)
+                    self._sleep_with_stop(2)
 
             if not otp_success:
                 self._print(f"[OAuth] OAuth 阶段 OTP 验证失败，已尝试 {len(tried_codes)} 个验证码")
@@ -1869,11 +1888,11 @@ class ChatGPTRegister:
 
 # ==================== 并发批量注册 ====================
 
-def _register_one(idx, total, proxy, output_file):
+def _register_one(idx, total, proxy, output_file, stop_event=None):
     """单个注册任务 (在线程中运行) - 使用 DuckMail 临时邮箱"""
     reg = None
     try:
-        reg = ChatGPTRegister(proxy=proxy, tag=f"{idx}")
+        reg = ChatGPTRegister(proxy=proxy, tag=f"{idx}", stop_event=stop_event)
 
         # 1. 创建 DuckMail 临时邮箱
         reg._print("[DuckMail] 创建临时邮箱...")
