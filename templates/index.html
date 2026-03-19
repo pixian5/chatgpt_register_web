@@ -1726,6 +1726,7 @@ function resetInspect() {
 // ════════════════════════════════════════════════════════════════
 async function toggleDaemon() {
   const toggle = document.getElementById('daemon-toggle');
+  switchToLogs();
   toggle.classList.add('transitioning');
 
   const isOn = toggle.classList.contains('on');
