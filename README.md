@@ -1,3 +1,13 @@
+---
+title: bz
+emoji: "🧩"
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # pam管理 Web UI
 
 ## 启动流程

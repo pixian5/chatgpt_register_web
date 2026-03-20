@@ -1,0 +1,12 @@
+.git
+.gitignore
+.venv
+__pycache__/
+.DS_Store
+.agents/
+.codex/
+uvicorn.log
+codex_tokens/
+ak.txt
+rk.txt
+registered_accounts.txt
