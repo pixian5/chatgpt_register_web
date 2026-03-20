@@ -1983,6 +1983,7 @@ async function startInspect(options = {}) {
     _inspectResult = await r.json();
     const { invalid_count, valid_count, gap } = _inspectResult;
 
+    await refreshPoolStatus();
     // 更新失效数显示
     document.getElementById('pool-invalid-disp').textContent = invalid_count;
 
