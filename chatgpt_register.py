@@ -846,6 +846,22 @@ def _is_registration_disallowed(status, data) -> bool:
     return code == "registration_disallowed" or "cannot create your account" in message
 
 
+class RegistrationFlowError(Exception):
+    """注册流程中的可识别异常。"""
+
+
+class HomepageBlockedError(RegistrationFlowError):
+    """首页访问被拦截。"""
+
+
+class CsrfFetchError(RegistrationFlowError):
+    """CSRF 获取失败。"""
+
+
+class RegistrationDisallowedError(RegistrationFlowError):
+    """当前资料或环境不允许完成注册。"""
+
+
 class ChatGPTRegister:
     BASE = "https://chatgpt.com"
     AUTH = "https://auth.openai.com"
@@ -915,6 +931,21 @@ class ChatGPTRegister:
             self._raise_if_stopped()
             remaining = deadline - time.time()
             time.sleep(min(step, max(0.0, remaining)))
+
+    def _response_snippet(self, response, limit: int = 200) -> str:
+        try:
+            text = (response.text or "").strip()
+        except Exception:
+            text = ""
+        if not text:
+            return ""
+        return text[:limit]
+
+    def _safe_json(self, response):
+        try:
+            return response.json()
+        except Exception:
+            return None
 
     # ==================== DuckMail 临时邮箱 ====================
 
@@ -1109,17 +1140,30 @@ class ChatGPTRegister:
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Upgrade-Insecure-Requests": "1",
         }, allow_redirects=True)
-        self._log("0. Visit homepage", "GET", url, r.status_code,
-                   {"cookies_count": len(self.session.cookies)})
+        body = {"cookies_count": len(self.session.cookies)}
+        if r.status_code != 200:
+            snippet = self._response_snippet(r)
+            if snippet:
+                body["text"] = snippet
+        self._log("0. Visit homepage", "GET", url, r.status_code, body)
+        if r.status_code != 200:
+            raise HomepageBlockedError(
+                f"首页访问失败 ({r.status_code})，可能被风控或代理异常"
+            )
 
     def get_csrf(self) -> str:
         url = f"{self.BASE}/api/auth/csrf"
         r = self.session.get(url, headers={"Accept": "application/json", "Referer": f"{self.BASE}/"})
-        data = r.json()
+        data = self._safe_json(r)
+        body = data if isinstance(data, dict) else {"text": self._response_snippet(r)}
+        self._log("1. Get CSRF", "GET", url, r.status_code, body)
+        if r.status_code != 200:
+            raise CsrfFetchError(f"获取 CSRF 失败 ({r.status_code})")
+        if not isinstance(data, dict):
+            raise CsrfFetchError("获取 CSRF 失败：响应不是有效 JSON")
         token = data.get("csrfToken", "")
-        self._log("1. Get CSRF", "GET", url, r.status_code, data)
         if not token:
-            raise Exception("Failed to get CSRF token")
+            raise CsrfFetchError("获取 CSRF 失败：响应缺少 csrfToken")
         return token
 
     def signin(self, email: str, csrf: str) -> str:
@@ -1134,9 +1178,12 @@ class ChatGPTRegister:
             "Content-Type": "application/x-www-form-urlencoded",
             "Accept": "application/json", "Referer": f"{self.BASE}/", "Origin": self.BASE,
         })
-        data = r.json()
+        data = self._safe_json(r)
+        body = data if isinstance(data, dict) else {"text": self._response_snippet(r)}
+        self._log("2. Signin", "POST", url, r.status_code, body)
+        if r.status_code != 200 or not isinstance(data, dict):
+            raise Exception(f"Signin 失败 ({r.status_code}): {body}")
         authorize_url = data.get("url", "")
-        self._log("2. Signin", "POST", url, r.status_code, data)
         if not authorize_url:
             raise Exception("Failed to get authorize URL")
         return authorize_url
@@ -1235,6 +1282,10 @@ class ChatGPTRegister:
             if not _is_registration_disallowed(status, data):
                 return status, data
             self._print(f"[注册] Create account 命中 registration_disallowed，准备更换资料重试...")
+        if _is_registration_disallowed(last_status, last_data):
+            raise RegistrationDisallowedError(
+                f"Create account 命中 registration_disallowed ({last_status}): {last_data}"
+            )
         return last_status, last_data
 
     # ==================== 自动注册主流程 ====================
@@ -1959,54 +2010,63 @@ class ChatGPTRegister:
 def _register_one(idx, total, proxy, output_file, stop_event=None):
     """单个注册任务 (在线程中运行) - 使用 DuckMail 临时邮箱"""
     reg = None
+    max_register_attempts = 3
     try:
-        reg = ChatGPTRegister(proxy=proxy, tag=f"{idx}", stop_event=stop_event)
+        last_retryable_error = None
+        for attempt in range(1, max_register_attempts + 1):
+            reg = ChatGPTRegister(proxy=proxy, tag=f"{idx}", stop_event=stop_event)
+            reg._print(f"[注册] 整轮尝试 {attempt}/{max_register_attempts}")
 
-        # 1. 创建 DuckMail 临时邮箱
-        reg._print("[DuckMail] 创建临时邮箱...")
-        email, email_pwd, mail_token = reg.create_temp_email()
-        tag = email.split("@")[0]
-        reg.tag = tag  # 更新 tag
+            try:
+                reg._print("[DuckMail] 创建临时邮箱...")
+                email, email_pwd, mail_token = reg.create_temp_email()
+                tag = email.split("@")[0]
+                reg.tag = tag
 
-        chatgpt_password = _generate_password()
-        name = _random_name()
-        birthdate = _random_birthdate()
+                chatgpt_password = _generate_password()
+                name = _random_name()
+                birthdate = _random_birthdate()
 
-        with _print_lock:
-            print(f"\n{'='*60}")
-            print(f"  [{idx}/{total}] 注册: {email}")
-            print(f"  pam管理密码: {chatgpt_password}")
-            print(f"  邮箱密码: {email_pwd}")
-            print(f"  姓名: {name} | 生日: {birthdate}")
-            print(f"{'='*60}")
+                with _print_lock:
+                    print(f"\n{'='*60}")
+                    print(f"  [{idx}/{total}] 注册: {email}")
+                    print(f"  pam管理密码: {chatgpt_password}")
+                    print(f"  邮箱密码: {email_pwd}")
+                    print(f"  姓名: {name} | 生日: {birthdate}")
+                    print(f"{'='*60}")
 
-        # 2. 执行注册流程
-        reg.run_register(email, chatgpt_password, name, birthdate, mail_token)
+                reg.run_register(email, chatgpt_password, name, birthdate, mail_token)
 
-        # 3. OAuth（可选）
-        oauth_ok = True
-        token_path = None
-        if ENABLE_OAUTH:
-            reg._print("[OAuth] 开始获取 Codex Token...")
-            tokens = reg.perform_codex_oauth_login_http(email, chatgpt_password, mail_token=mail_token)
-            oauth_ok = bool(tokens and tokens.get("access_token"))
-            if oauth_ok:
-                token_path = _save_codex_tokens(email, tokens)
-                reg._print("[OAuth] Token 已保存")
-            else:
-                msg = "OAuth 获取失败"
-                if OAUTH_REQUIRED:
-                    raise Exception(f"{msg}（oauth_required=true）")
-                reg._print(f"[OAuth] {msg}（按配置继续）")
+                oauth_ok = True
+                token_path = None
+                if ENABLE_OAUTH:
+                    reg._print("[OAuth] 开始获取 Codex Token...")
+                    tokens = reg.perform_codex_oauth_login_http(email, chatgpt_password, mail_token=mail_token)
+                    oauth_ok = bool(tokens and tokens.get("access_token"))
+                    if oauth_ok:
+                        token_path = _save_codex_tokens(email, tokens)
+                        reg._print("[OAuth] Token 已保存")
+                    else:
+                        msg = "OAuth 获取失败"
+                        if OAUTH_REQUIRED:
+                            raise Exception(f"{msg}（oauth_required=true）")
+                        reg._print(f"[OAuth] {msg}（按配置继续）")
 
-        # 4. 线程安全写入结果
-        with _file_lock:
-            with open(output_file, "a", encoding="utf-8") as out:
-                out.write(f"{email}----{chatgpt_password}----{email_pwd}----oauth={'ok' if oauth_ok else 'fail'}\n")
+                with _file_lock:
+                    with open(output_file, "a", encoding="utf-8") as out:
+                        out.write(f"{email}----{chatgpt_password}----{email_pwd}----oauth={'ok' if oauth_ok else 'fail'}\n")
 
-        with _print_lock:
-            print(f"\n[OK] [{tag}] {email} 注册成功!")
-        return True, email, token_path, None
+                with _print_lock:
+                    print(f"\n[OK] [{tag}] {email} 注册成功!")
+                return True, email, token_path, None
+
+            except (HomepageBlockedError, CsrfFetchError, RegistrationDisallowedError) as e:
+                last_retryable_error = str(e)
+                reg._print(f"[注册] 当前整轮尝试失败: {last_retryable_error}")
+                if attempt >= max_register_attempts:
+                    raise Exception(last_retryable_error)
+                reg._print("[注册] 准备更换邮箱并重新开始整轮注册...")
+                reg._sleep_with_stop(random.uniform(1.0, 2.0))
 
     except Exception as e:
         error_msg = str(e)
@@ -2054,7 +2114,7 @@ def run_batch(total_accounts: int = 3, output_file="registered_accounts.txt",
         for future in as_completed(futures):
             idx = futures[future]
             try:
-                ok, email, err = future.result()
+                ok, email, _token_path, err = future.result()
                 if ok:
                     success_count += 1
                 else:
