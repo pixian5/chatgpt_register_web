@@ -835,6 +835,17 @@ def _random_birthdate():
     return f"{y}-{m:02d}-{d:02d}"
 
 
+def _is_registration_disallowed(status, data) -> bool:
+    if status != 400 or not isinstance(data, dict):
+        return False
+    err = data.get("error")
+    if not isinstance(err, dict):
+        return False
+    code = str(err.get("code") or "").strip().lower()
+    message = str(err.get("message") or "").strip().lower()
+    return code == "registration_disallowed" or "cannot create your account" in message
+
+
 class ChatGPTRegister:
     BASE = "https://chatgpt.com"
     AUTH = "https://auth.openai.com"
@@ -1200,6 +1211,32 @@ class ChatGPTRegister:
         self._log("8. Callback", "GET", url, r.status_code, {"final_url": str(r.url)})
         return r.status_code, {"final_url": str(r.url)}
 
+    def _create_account_with_retry(self, name: str, birthdate: str, max_attempts: int = 3):
+        attempts = [(name, birthdate)]
+        seen = {(name, birthdate)}
+        while len(attempts) < max_attempts:
+            candidate = (_random_name(), _random_birthdate())
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            attempts.append(candidate)
+
+        last_status, last_data = None, None
+        for idx, (candidate_name, candidate_birthdate) in enumerate(attempts, start=1):
+            if idx > 1:
+                self._print(
+                    f"[注册] Create account 第 {idx} 次重试: 姓名={candidate_name}, 生日={candidate_birthdate}"
+                )
+                self._sleep_with_stop(random.uniform(0.3, 0.8))
+            status, data = self.create_account(candidate_name, candidate_birthdate)
+            last_status, last_data = status, data
+            if status == 200:
+                return status, data
+            if not _is_registration_disallowed(status, data):
+                return status, data
+            self._print(f"[注册] Create account 命中 registration_disallowed，准备更换资料重试...")
+        return last_status, last_data
+
     # ==================== 自动注册主流程 ====================
 
     def run_register(self, email, password, name, birthdate, mail_token):
@@ -1240,7 +1277,9 @@ class ChatGPTRegister:
         elif "about-you" in final_path:
             self._print("跳到填写信息阶段")
             self._sleep_with_stop(random.uniform(0.5, 1.0))
-            self.create_account(name, birthdate)
+            status, data = self._create_account_with_retry(name, birthdate)
+            if status != 200:
+                raise Exception(f"Create account 失败 ({status}): {data}")
             self._sleep_with_stop(random.uniform(0.3, 0.5))
             self.callback()
             return True
@@ -1276,7 +1315,7 @@ class ChatGPTRegister:
                     raise Exception(f"验证码失败 ({status}): {data}")
 
         self._sleep_with_stop(random.uniform(0.5, 1.5))
-        status, data = self.create_account(name, birthdate)
+        status, data = self._create_account_with_retry(name, birthdate)
         if status != 200:
             raise Exception(f"Create account 失败 ({status}): {data}")
         self._sleep_with_stop(random.uniform(0.2, 0.5))
