@@ -18,7 +18,7 @@ import os
 import sys
 import threading
 import time
-from collections import Counter
+from collections import Counter, deque
 from typing import Callable, Dict, List, Optional, Any
 from urllib.parse import unquote, quote
 
@@ -47,6 +47,7 @@ DEFAULT_POOL_FAIL_COOLDOWN_SEC = 20
 DEFAULT_POOL_403_COOLDOWN_SEC = 60
 DEFAULT_POOL_MAX_403_BATCHES = 2
 DEFAULT_POOL_MAX_DISALLOWED_BATCHES = 2
+DEFAULT_POOL_FAIL_WINDOW_SIZE = 4
 
 DEFAULT_CONFIG = {
     "total_accounts": DEFAULT_TOTAL_ACCOUNTS,
@@ -80,6 +81,7 @@ DEFAULT_CONFIG = {
         "fill_403_cooldown_sec": DEFAULT_POOL_403_COOLDOWN_SEC,
         "fill_max_403_batches": DEFAULT_POOL_MAX_403_BATCHES,
         "fill_max_disallowed_batches": DEFAULT_POOL_MAX_DISALLOWED_BATCHES,
+        "fill_fail_window_size": DEFAULT_POOL_FAIL_WINDOW_SIZE,
     },
 }
 
@@ -143,6 +145,11 @@ def _classify_register_error(err: Optional[str]) -> str:
     if "验证码" in str(err or ""):
         return "otp_failed"
     return "other"
+
+
+def _batch_matches_reason(batch_fail_reasons: Counter[str], reason: str) -> bool:
+    total_fail = sum(batch_fail_reasons.values())
+    return total_fail > 0 and batch_fail_reasons.get(reason, 0) == total_fail
 
 
 # ============================================================
@@ -418,6 +425,11 @@ def _run_pool_fill_batches(
         DEFAULT_POOL_MAX_DISALLOWED_BATCHES,
         minimum=1,
     )
+    fail_window_size = _safe_int(
+        pool_cfg.get("fill_fail_window_size"),
+        DEFAULT_POOL_FAIL_WINDOW_SIZE,
+        minimum=2,
+    )
 
     success_total = 0
     fail_total = 0
@@ -427,6 +439,7 @@ def _run_pool_fill_batches(
     consecutive_disallowed_batches = 0
     aggregate_fail_reasons: Counter[str] = Counter()
     stopped_early_reason = ""
+    recent_batches = deque(maxlen=fail_window_size)
 
     while remaining > 0:
         if stop_event and stop_event.is_set():
@@ -459,6 +472,11 @@ def _run_pool_fill_batches(
         batch_fail = batch_result.get("fail", 0)
         batch_fail_reasons = Counter(batch_result.get("fail_reasons") or {})
         aggregate_fail_reasons.update(batch_fail_reasons)
+        recent_batches.append({
+            "success": batch_success,
+            "fail": batch_fail,
+            "fail_reasons": batch_fail_reasons,
+        })
 
         success_total += batch_success
         fail_total += batch_fail
@@ -482,6 +500,16 @@ def _run_pool_fill_batches(
             f"[Pool] 批次 {batch_index} 完成: 成功={batch_success}, 失败={batch_fail}, 剩余缺口={remaining}"
         )
 
+        recent_disallowed_batches = sum(
+            1 for item in recent_batches
+            if _batch_matches_reason(item["fail_reasons"], "registration_disallowed")
+        )
+        recent_403_batches = sum(
+            1 for item in recent_batches
+            if _batch_matches_reason(item["fail_reasons"], "homepage_403")
+        )
+        recent_success_batches = sum(1 for item in recent_batches if item["success"] > 0)
+
         if remaining <= 0:
             break
 
@@ -498,10 +526,28 @@ def _run_pool_fill_batches(
             )
             break
 
+        if recent_disallowed_batches >= max_disallowed_batches:
+            stopped_early_reason = "registration_disallowed"
+            log(
+                f"[Pool] 最近 {len(recent_batches)} 个批次中有 {recent_disallowed_batches} 个批次"
+                "命中 registration_disallowed，结束本轮补号，等待下次再试"
+            )
+            break
+
         if consecutive_403_batches >= max_403_batches:
             stopped_early_reason = "homepage_403"
             log(
                 f"[Pool] 连续 {consecutive_403_batches} 个批次首页 403，冷却 {cooldown_403}s 后结束本轮补号"
+            )
+            if cooldown_403 > 0:
+                _sleep_with_stop(stop_event, cooldown_403)
+            break
+
+        if recent_403_batches >= max_403_batches and recent_success_batches == 0:
+            stopped_early_reason = "homepage_403"
+            log(
+                f"[Pool] 最近 {len(recent_batches)} 个批次中有 {recent_403_batches} 个批次首页 403，"
+                f"冷却 {cooldown_403}s 后结束本轮补号"
             )
             if cooldown_403 > 0:
                 _sleep_with_stop(stop_event, cooldown_403)
