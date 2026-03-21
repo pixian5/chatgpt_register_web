@@ -42,6 +42,11 @@ DEFAULT_POOL_TARGET_COUNT = 100
 DEFAULT_POOL_PROBE_WORKERS = 20
 DEFAULT_POOL_DELETE_WORKERS = 10
 DEFAULT_POOL_INTERVAL_MIN = 30
+DEFAULT_POOL_FILL_BATCH_SIZE = 1
+DEFAULT_POOL_FAIL_COOLDOWN_SEC = 20
+DEFAULT_POOL_403_COOLDOWN_SEC = 60
+DEFAULT_POOL_MAX_403_BATCHES = 2
+DEFAULT_POOL_MAX_DISALLOWED_BATCHES = 2
 
 DEFAULT_CONFIG = {
     "total_accounts": DEFAULT_TOTAL_ACCOUNTS,
@@ -70,6 +75,11 @@ DEFAULT_CONFIG = {
         "probe_workers": DEFAULT_POOL_PROBE_WORKERS,
         "delete_workers": DEFAULT_POOL_DELETE_WORKERS,
         "interval_min": DEFAULT_POOL_INTERVAL_MIN,
+        "fill_batch_size": DEFAULT_POOL_FILL_BATCH_SIZE,
+        "fill_fail_cooldown_sec": DEFAULT_POOL_FAIL_COOLDOWN_SEC,
+        "fill_403_cooldown_sec": DEFAULT_POOL_403_COOLDOWN_SEC,
+        "fill_max_403_batches": DEFAULT_POOL_MAX_403_BATCHES,
+        "fill_max_disallowed_batches": DEFAULT_POOL_MAX_DISALLOWED_BATCHES,
     },
 }
 
@@ -96,6 +106,43 @@ def _normalize_token_name(raw_name: str) -> str:
     if base_name.endswith(".json"):
         base_name = base_name[:-5]
     return base_name.strip()
+
+
+def _safe_int(value: Any, default: int, minimum: Optional[int] = None) -> int:
+    try:
+        num = int(value)
+    except (TypeError, ValueError):
+        num = default
+    if minimum is not None:
+        num = max(minimum, num)
+    return num
+
+
+def _sleep_with_stop(stop_event: Optional[threading.Event], seconds: float, step: float = 0.2) -> bool:
+    deadline = time.time() + max(0.0, seconds)
+    while time.time() < deadline:
+        if stop_event and stop_event.is_set():
+            return False
+        remaining = deadline - time.time()
+        time.sleep(min(step, max(0.0, remaining)))
+    return True
+
+
+def _classify_register_error(err: Optional[str]) -> str:
+    text = str(err or "").strip().lower()
+    if not text:
+        return "unknown"
+    if "已停止" in str(err or ""):
+        return "stopped"
+    if "首页访问失败 (403)" in str(err or ""):
+        return "homepage_403"
+    if "registration_disallowed" in text:
+        return "registration_disallowed"
+    if "获取 csrf 失败" in str(err or ""):
+        return "csrf_failed"
+    if "验证码" in str(err or ""):
+        return "otp_failed"
+    return "other"
 
 
 # ============================================================
@@ -254,6 +301,8 @@ def run_batch_register(
     fail_count = 0
     total = count
     _counter_lock = threading.Lock()
+    fail_reasons: Counter[str] = Counter()
+    fail_samples: Dict[str, str] = {}
 
     def register_one(idx: int):
         nonlocal success_count, fail_count
@@ -276,6 +325,10 @@ def run_batch_register(
                 success_count += 1
             else:
                 fail_count += 1
+                reason = _classify_register_error(err)
+                fail_reasons[reason] += 1
+                if reason not in fail_samples and err:
+                    fail_samples[reason] = str(err)
             if progress_cb:
                 try:
                     progress_cb(success_count, fail_count, total)
@@ -314,8 +367,161 @@ def run_batch_register(
 
     if log_cb:
         log_cb(f"[注册] 完成: 成功={success_count}, 失败={fail_count}, 总计={total}")
+        if fail_reasons:
+            parts = [f"{key}={value}" for key, value in sorted(fail_reasons.items())]
+            log_cb(f"[注册] 失败分类: {', '.join(parts)}")
 
-    return {"success": success_count, "fail": fail_count, "total": total}
+    return {
+        "success": success_count,
+        "fail": fail_count,
+        "total": total,
+        "fail_reasons": dict(fail_reasons),
+        "fail_samples": fail_samples,
+    }
+
+
+def _run_pool_fill_batches(
+    fill_count: int,
+    stop_event: threading.Event,
+    log_cb: Callable[[str], None],
+    progress_cb: Callable[[int, int, int], None],
+    config: Optional[dict] = None,
+    proxy: str = "",
+    success_cb: Optional[Callable[[str, Optional[str]], None]] = None,
+) -> dict:
+    def log(msg):
+        if log_cb:
+            log_cb(msg)
+
+    cfg = config or {}
+    pool_cfg = (cfg.get("pool") or {})
+    cfg_workers = _safe_int(cfg.get("workers"), DEFAULT_WORKERS, minimum=1)
+    batch_size = _safe_int(pool_cfg.get("fill_batch_size"), DEFAULT_POOL_FILL_BATCH_SIZE, minimum=1)
+    batch_size = max(batch_size, cfg_workers)
+    fail_cooldown = _safe_int(
+        pool_cfg.get("fill_fail_cooldown_sec"),
+        DEFAULT_POOL_FAIL_COOLDOWN_SEC,
+        minimum=0,
+    )
+    cooldown_403 = _safe_int(
+        pool_cfg.get("fill_403_cooldown_sec"),
+        DEFAULT_POOL_403_COOLDOWN_SEC,
+        minimum=0,
+    )
+    max_403_batches = _safe_int(
+        pool_cfg.get("fill_max_403_batches"),
+        DEFAULT_POOL_MAX_403_BATCHES,
+        minimum=1,
+    )
+    max_disallowed_batches = _safe_int(
+        pool_cfg.get("fill_max_disallowed_batches"),
+        DEFAULT_POOL_MAX_DISALLOWED_BATCHES,
+        minimum=1,
+    )
+
+    success_total = 0
+    fail_total = 0
+    remaining = max(0, fill_count)
+    batch_index = 0
+    consecutive_403_batches = 0
+    consecutive_disallowed_batches = 0
+    aggregate_fail_reasons: Counter[str] = Counter()
+    stopped_early_reason = ""
+
+    while remaining > 0:
+        if stop_event and stop_event.is_set():
+            stopped_early_reason = "stopped"
+            log("[Pool] 已收到停止请求，结束当前补号")
+            break
+
+        batch_index += 1
+        current_batch = min(batch_size, remaining)
+        log(f"[Pool] 补号批次 {batch_index}: 本批 {current_batch} 个，剩余目标 {remaining} 个")
+
+        def batch_progress_cb(batch_success: int, batch_fail: int, _batch_total: int):
+            if progress_cb:
+                try:
+                    progress_cb(success_total + batch_success, fail_total + batch_fail, fill_count)
+                except Exception:
+                    pass
+
+        batch_result = run_batch_register(
+            count=current_batch,
+            workers=min(cfg_workers, current_batch),
+            proxy=proxy,
+            stop_event=stop_event,
+            log_cb=log_cb,
+            progress_cb=batch_progress_cb,
+            config=cfg,
+            success_cb=success_cb,
+        )
+        batch_success = batch_result.get("success", 0)
+        batch_fail = batch_result.get("fail", 0)
+        batch_fail_reasons = Counter(batch_result.get("fail_reasons") or {})
+        aggregate_fail_reasons.update(batch_fail_reasons)
+
+        success_total += batch_success
+        fail_total += batch_fail
+        remaining = max(0, fill_count - success_total)
+
+        if batch_success > 0:
+            consecutive_403_batches = 0
+            consecutive_disallowed_batches = 0
+        else:
+            if batch_fail > 0 and batch_fail_reasons.get("homepage_403", 0) == batch_fail:
+                consecutive_403_batches += 1
+            else:
+                consecutive_403_batches = 0
+
+            if batch_fail > 0 and batch_fail_reasons.get("registration_disallowed", 0) == batch_fail:
+                consecutive_disallowed_batches += 1
+            else:
+                consecutive_disallowed_batches = 0
+
+        log(
+            f"[Pool] 批次 {batch_index} 完成: 成功={batch_success}, 失败={batch_fail}, 剩余缺口={remaining}"
+        )
+
+        if remaining <= 0:
+            break
+
+        if stop_event and stop_event.is_set():
+            stopped_early_reason = "stopped"
+            log("[Pool] 已收到停止请求，结束当前补号")
+            break
+
+        if consecutive_disallowed_batches >= max_disallowed_batches:
+            stopped_early_reason = "registration_disallowed"
+            log(
+                f"[Pool] 连续 {consecutive_disallowed_batches} 个批次命中 registration_disallowed，"
+                "结束本轮补号，等待下次再试"
+            )
+            break
+
+        if consecutive_403_batches >= max_403_batches:
+            stopped_early_reason = "homepage_403"
+            log(
+                f"[Pool] 连续 {consecutive_403_batches} 个批次首页 403，冷却 {cooldown_403}s 后结束本轮补号"
+            )
+            if cooldown_403 > 0:
+                _sleep_with_stop(stop_event, cooldown_403)
+            break
+
+        if batch_success == 0 and batch_fail > 0 and fail_cooldown > 0:
+            log(f"[Pool] 本批没有成功账号，冷却 {fail_cooldown}s 后继续下一批...")
+            if not _sleep_with_stop(stop_event, fail_cooldown):
+                stopped_early_reason = "stopped"
+                log("[Pool] 冷却期间收到停止请求，结束当前补号")
+                break
+
+    return {
+        "success": success_total,
+        "fail": fail_total,
+        "total": fill_count,
+        "deferred": remaining,
+        "stopped_early_reason": stopped_early_reason,
+        "fail_reasons": dict(aggregate_fail_reasons),
+    }
 
 
 # ============================================================
@@ -1086,15 +1292,13 @@ def run_pool_fill(
             with upload_lock:
                 uploaded_count += 1
 
-    cfg_workers = int((config or {}).get("workers") or DEFAULT_WORKERS)
-    result = run_batch_register(
-        count=fill_count,
-        workers=min(cfg_workers, fill_count),
-        proxy=proxy or (config or {}).get("proxy", ""),
+    result = _run_pool_fill_batches(
+        fill_count=fill_count,
         stop_event=stop_event,
         log_cb=log_cb,
         progress_cb=progress_cb,
         config=config,
+        proxy=proxy or (config or {}).get("proxy", ""),
         success_cb=upload_after_success if (base_url and pool_token) else None,
     )
     result["uploaded"] = uploaded_count
@@ -1415,7 +1619,6 @@ def run_pool_maintain_cycle(
                         "gap": gap,
                     }
                 log(f"[Daemon] 开始注册 {gap} 个账号...")
-                cfg_workers = int((config or {}).get("workers") or DEFAULT_WORKERS)
                 upload_lock = threading.Lock()
 
                 def upload_after_success(email: str, token_path: Optional[str]):
@@ -1434,18 +1637,20 @@ def run_pool_maintain_cycle(
                         with upload_lock:
                             uploaded += 1
 
-                reg_result = run_batch_register(
-                    count=gap,
-                    workers=min(cfg_workers, gap),
-                    proxy=proxy,
+                reg_result = _run_pool_fill_batches(
+                    fill_count=gap,
                     stop_event=stop_event,
                     log_cb=log_cb,
                     progress_cb=lambda s, f, t: None,
                     config=config,
+                    proxy=proxy,
                     success_cb=upload_after_success,
                 )
                 registered = reg_result.get("success", 0)
-                log(f"[Daemon] 注册完成: 成功={registered}, 失败={reg_result.get('fail', 0)}")
+                deferred = reg_result.get("deferred", 0)
+                log(
+                    f"[Daemon] 注册完成: 成功={registered}, 失败={reg_result.get('fail', 0)}, 剩余缺口={deferred}"
+                )
             else:
                 log("[Daemon] 存量补齐，无需注册新账号")
     else:
