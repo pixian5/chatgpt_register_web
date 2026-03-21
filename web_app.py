@@ -475,8 +475,6 @@ async def pool_fill(body: dict = Body(...)):
                 target_type=target_type,
             )
             log_cb(f"[Pool] 补号完成: 成功={result.get('success')}, 失败={result.get('fail')}")
-            if result.get("deferred", 0) > 0:
-                log_cb(f"[Pool] 本轮提前结束，剩余缺口={result.get('deferred')}")
         except Exception as e:
             log_cb(f"[ERROR] 补号异常: {e}")
         finally:
