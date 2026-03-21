@@ -48,6 +48,7 @@ DEFAULT_POOL_403_COOLDOWN_SEC = 60
 DEFAULT_POOL_MAX_403_BATCHES = 2
 DEFAULT_POOL_MAX_DISALLOWED_BATCHES = 2
 DEFAULT_POOL_FAIL_WINDOW_SIZE = 4
+DEFAULT_POOL_MAX_FAILED_BATCHES = 3
 
 DEFAULT_CONFIG = {
     "total_accounts": DEFAULT_TOTAL_ACCOUNTS,
@@ -82,6 +83,7 @@ DEFAULT_CONFIG = {
         "fill_max_403_batches": DEFAULT_POOL_MAX_403_BATCHES,
         "fill_max_disallowed_batches": DEFAULT_POOL_MAX_DISALLOWED_BATCHES,
         "fill_fail_window_size": DEFAULT_POOL_FAIL_WINDOW_SIZE,
+        "fill_max_failed_batches": DEFAULT_POOL_MAX_FAILED_BATCHES,
     },
 }
 
@@ -430,6 +432,11 @@ def _run_pool_fill_batches(
         DEFAULT_POOL_FAIL_WINDOW_SIZE,
         minimum=2,
     )
+    max_failed_batches = _safe_int(
+        pool_cfg.get("fill_max_failed_batches"),
+        DEFAULT_POOL_MAX_FAILED_BATCHES,
+        minimum=1,
+    )
 
     success_total = 0
     fail_total = 0
@@ -437,6 +444,7 @@ def _run_pool_fill_batches(
     batch_index = 0
     consecutive_403_batches = 0
     consecutive_disallowed_batches = 0
+    consecutive_failed_batches = 0
     aggregate_fail_reasons: Counter[str] = Counter()
     stopped_early_reason = ""
     recent_batches = deque(maxlen=fail_window_size)
@@ -485,7 +493,12 @@ def _run_pool_fill_batches(
         if batch_success > 0:
             consecutive_403_batches = 0
             consecutive_disallowed_batches = 0
+            consecutive_failed_batches = 0
         else:
+            if batch_fail > 0:
+                consecutive_failed_batches += 1
+            else:
+                consecutive_failed_batches = 0
             if batch_fail > 0 and batch_fail_reasons.get("homepage_403", 0) == batch_fail:
                 consecutive_403_batches += 1
             else:
@@ -516,6 +529,14 @@ def _run_pool_fill_batches(
         if stop_event and stop_event.is_set():
             stopped_early_reason = "stopped"
             log("[Pool] 已收到停止请求，结束当前补号")
+            break
+
+        if consecutive_failed_batches >= max_failed_batches:
+            stopped_early_reason = "batch_failures"
+            log(
+                f"[Pool] 连续 {consecutive_failed_batches} 个批次没有成功账号，"
+                "结束本轮补号，等待下次再试"
+            )
             break
 
         if consecutive_disallowed_batches >= max_disallowed_batches:
