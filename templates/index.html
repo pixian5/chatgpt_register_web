@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>9</title>
+  <title>11</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1257,7 +1257,7 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">9</div>
+          <div class="version-chip">11</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
@@ -1891,6 +1891,36 @@ async function saveSettings() {
   }
 }
 
+async function saveDaemonIntervalSetting() {
+  const intervalMin = _readInt('daemon-interval', _savedConfig.pool_interval_min ?? APP_DEFAULTS.pool_interval_min);
+  try {
+    const r = await fetch('/api/config');
+    const cfg = await r.json();
+    cfg.pool = cfg.pool || {};
+    cfg.pool.interval_min = intervalMin;
+    const saveResp = await fetch('/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(cfg),
+    });
+    if (!saveResp.ok) return;
+    _syncSavedConfig(cfg);
+    await pollDaemonStatus();
+  } catch (e) {
+    console.warn('保存守护进程间隔失败', e);
+  }
+}
+
+let _daemonIntervalSaveTimer = null;
+
+function queueSaveDaemonIntervalSetting() {
+  if (_daemonIntervalSaveTimer) clearTimeout(_daemonIntervalSaveTimer);
+  _daemonIntervalSaveTimer = setTimeout(() => {
+    _daemonIntervalSaveTimer = null;
+    saveDaemonIntervalSetting();
+  }, 350);
+}
+
 // ════════════════════════════════════════════════════════════════
 // 仅注册
 // ════════════════════════════════════════════════════════════════
@@ -2514,6 +2544,12 @@ async function doSync() {
 (async function init() {
   initTabs();
   applyUiDefaults();
+  document.getElementById('daemon-interval')?.addEventListener('input', () => {
+    queueSaveDaemonIntervalSetting();
+  });
+  document.getElementById('daemon-interval')?.addEventListener('change', () => {
+    saveDaemonIntervalSetting();
+  });
   window.addEventListener('resize', () => {
     if (!_isMobileLayout()) closeSettingsDrawer();
     if (_accountsCache) _renderAccounts(_accountsCache);

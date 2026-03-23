@@ -771,6 +771,16 @@ _pool_daemon: Dict[str, Any] = {
 _pool_daemon_timer: Optional[threading.Timer] = None
 
 
+def _persist_pool_interval(interval_min: int):
+    cfg = reg.load_config()
+    pool = cfg.get("pool")
+    if not isinstance(pool, dict):
+        pool = {}
+        cfg["pool"] = pool
+    pool["interval_min"] = max(1, int(interval_min))
+    reg.save_config(cfg)
+
+
 def _reschedule_pool_daemon_timer():
     global _pool_daemon_timer
 
@@ -863,6 +873,7 @@ def _run_daemon_once():
 @app.post("/api/pool/daemon/start")
 async def pool_daemon_start(body: dict = Body(...)):
     interval_min = _start_pool_daemon(body)
+    _persist_pool_interval(interval_min)
     return {"ok": True, "interval_min": interval_min}
 
 
