@@ -658,6 +658,13 @@ async def pool_logs(after: int = 0, limit: int = 200):
     return {"ok": True, "items": items, "last_seq": last_seq}
 
 
+@app.get("/api/pool/logs/cursor")
+async def pool_logs_cursor():
+    with _pool_log_lock:
+        last_seq = _pool_log_seq
+    return {"ok": True, "last_seq": last_seq}
+
+
 # ============================================================
 # 代理管理 API
 # ============================================================

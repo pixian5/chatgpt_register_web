@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>5</title>
+  <title>8</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1257,7 +1257,7 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">5</div>
+          <div class="version-chip">8</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
@@ -1682,6 +1682,17 @@ async function pollPoolLogsOnce(silent = false) {
     if (Number(d.last_seq || 0) > _poolLogSeq) _poolLogSeq = Number(d.last_seq || 0);
   } catch (e) {
     if (!silent) appendLog('[WS] 池日志轮询失败: ' + e);
+  }
+}
+
+async function initPoolLogCursor(silent = false) {
+  try {
+    const r = await fetch('/api/pool/logs/cursor', { cache: 'no-store' });
+    const d = await r.json();
+    if (!d.ok) return;
+    _poolLogSeq = Number(d.last_seq || 0);
+  } catch (e) {
+    if (!silent) appendLog('[WS] 初始化池日志游标失败: ' + e);
   }
 }
 
@@ -2510,7 +2521,7 @@ async function doSync() {
     if (e.key === 'Escape') closeSettingsDrawer();
   });
   await loadSettings();
-  await pollPoolLogsOnce(true);
+  await initPoolLogCursor(true);
   connectPoolWs();
 
   // 初次刷新池状态
