@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>4</title>
+  <title>5</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -613,6 +613,15 @@ input:focus, select:focus {
   min-width: 0;
 }
 
+.panel-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
 .version-chip {
   display: inline-flex;
   align-items: center;
@@ -626,6 +635,18 @@ input:focus, select:focus {
   letter-spacing: 0.08em;
   font-family: var(--font-mono);
   white-space: nowrap;
+}
+
+.toolbar-actions {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.toolbar-actions.active {
+  display: flex;
 }
 
 .tab-bar {
@@ -836,6 +857,8 @@ input:focus, select:focus {
   .card-header,
   .panel-header,
   .panel-actions,
+  .panel-topbar,
+  .toolbar-actions,
   .daemon-row,
   .pool-main-row,
   .pool-meta,
@@ -861,6 +884,16 @@ input:focus, select:focus {
     width: 100%;
   }
 
+  .panel-topbar {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .panel-card-head {
     width: 100%;
     justify-content: space-between;
@@ -876,7 +909,8 @@ input:focus, select:focus {
     gap: 8px;
   }
 
-  .panel-actions .btn {
+  .panel-actions .btn,
+  .toolbar-actions .btn {
     flex: 1 1 calc(50% - 8px);
   }
 
@@ -1223,22 +1257,28 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">4</div>
+          <div class="version-chip">5</div>
         </div>
-        <div class="tab-bar">
-          <button class="tab-btn active" data-tab="accounts">账号列表</button>
-          <button class="tab-btn" data-tab="logs">实时日志</button>
+        <div class="panel-topbar">
+          <div class="toolbar-actions active" data-toolbar="accounts">
+            <button class="btn btn-sm btn-secondary" id="btn-refresh-accounts" onclick="refreshAccounts()">↻ 刷新</button>
+            <button class="btn btn-sm btn-secondary" id="btn-sync-accounts" onclick="doSync()">⇅ 同步</button>
+          </div>
+          <div class="toolbar-actions" data-toolbar="logs">
+            <button class="btn btn-sm btn-secondary" id="btn-stop-pool" onclick="stopPoolFill()" disabled>停止补号</button>
+            <button class="btn btn-sm btn-secondary" onclick="scrollLogsTop()">到顶部</button>
+            <button class="btn btn-sm btn-secondary" onclick="scrollLogsBottom()">到底部</button>
+            <button class="btn btn-sm btn-secondary" onclick="copyLogs()">复制</button>
+            <button class="btn btn-sm btn-secondary" onclick="clearLog()">清空</button>
+          </div>
+          <div class="tab-bar">
+            <button class="tab-btn active" data-tab="accounts">账号列表</button>
+            <button class="tab-btn" data-tab="logs">实时日志</button>
+          </div>
         </div>
       </div>
       <div class="tab-content">
         <div class="tab-panel active" id="tab-accounts">
-          <div class="panel-header">
-            <div class="panel-title">账号列表</div>
-            <div class="panel-actions">
-              <button class="btn btn-sm btn-secondary" id="btn-refresh-accounts" onclick="refreshAccounts()">↻ 刷新</button>
-              <button class="btn btn-sm btn-secondary" id="btn-sync-accounts" onclick="doSync()">⇅ 同步</button>
-            </div>
-          </div>
           <div id="accounts-body">
             <div id="accounts-loading" style="display:none;color:var(--text-tertiary);font-size:13px">加载中...</div>
             <div class="accounts-mobile-list" id="accounts-mobile-list" style="display:none"></div>
@@ -1252,16 +1292,6 @@ input:focus, select:focus {
           </div>
         </div>
         <div class="tab-panel" id="tab-logs">
-          <div class="panel-header">
-            <div class="panel-title">实时日志</div>
-            <div class="panel-actions">
-              <button class="btn btn-sm btn-secondary" id="btn-stop-pool" onclick="stopPoolFill()" disabled>停止补号</button>
-              <button class="btn btn-sm btn-secondary" onclick="scrollLogsTop()">到顶部</button>
-              <button class="btn btn-sm btn-secondary" onclick="scrollLogsBottom()">到底部</button>
-              <button class="btn btn-sm btn-secondary" onclick="copyLogs()">复制</button>
-              <button class="btn btn-sm btn-secondary" onclick="clearLog()">清空</button>
-            </div>
-          </div>
           <div id="log-box" class="log-box">
             <span class="log-placeholder">等待任务启动...</span>
           </div>
@@ -1593,11 +1623,15 @@ async function stopPoolFill() {
 function setTab(tabName) {
   const btns = document.querySelectorAll('.tab-btn');
   const panels = document.querySelectorAll('.tab-panel');
+  const toolbars = document.querySelectorAll('.toolbar-actions');
   btns.forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.tab === tabName);
   });
   panels.forEach((panel) => {
     panel.classList.toggle('active', panel.id === `tab-${tabName}`);
+  });
+  toolbars.forEach((toolbar) => {
+    toolbar.classList.toggle('active', toolbar.dataset.toolbar === tabName);
   });
   if (_isMobileLayout()) closeSettingsDrawer();
 }
