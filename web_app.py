@@ -224,6 +224,7 @@ async def save_config(config: dict = Body(...)):
             _pool_daemon["interval_min"],
             minimum=1,
         )
+        _reschedule_pool_daemon_timer()
 
     return {"ok": True}
 
@@ -770,6 +771,23 @@ _pool_daemon: Dict[str, Any] = {
 _pool_daemon_timer: Optional[threading.Timer] = None
 
 
+def _reschedule_pool_daemon_timer():
+    global _pool_daemon_timer
+
+    if _pool_daemon_timer and _pool_daemon_timer.is_alive():
+        _pool_daemon_timer.cancel()
+        _pool_daemon_timer = None
+
+    if not _pool_daemon["enabled"] or _pool_daemon.get("running_now"):
+        return
+
+    interval_sec = max(1, int(_pool_daemon["interval_min"])) * 60
+    _pool_daemon["next_run_ts"] = time.time() + interval_sec
+    _pool_daemon_timer = threading.Timer(interval_sec, _run_daemon_once)
+    _pool_daemon_timer.daemon = True
+    _pool_daemon_timer.start()
+
+
 def _start_pool_daemon(source: Optional[dict] = None):
     global _pool_daemon_timer
 
@@ -780,6 +798,7 @@ def _start_pool_daemon(source: Optional[dict] = None):
     # 停止旧 timer
     if _pool_daemon_timer and _pool_daemon_timer.is_alive():
         _pool_daemon_timer.cancel()
+        _pool_daemon_timer = None
 
     interval_min = _to_int(
         (source or {}).get("interval_min"),
