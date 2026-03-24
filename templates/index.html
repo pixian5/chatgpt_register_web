@@ -1314,6 +1314,7 @@ let _daemonLocalTimer = null; // 每秒递减倒计时
 let _daemonPollTimer = null;  // 每5秒同步后端
 let _poolTaskPollTimer = null;
 let _poolLogPollTimer = null;
+let _sharedRegStatsPollTimer = null;
 let _logBuffer = [];
 let _fillSuccessCount = 0;
 let _poolRefreshTimer = null;
@@ -2661,6 +2662,8 @@ async function doSync() {
   _daemonPollTimer = setInterval(pollDaemonStatus, 5000);
   pollPoolTaskStatus();
   _poolTaskPollTimer = setInterval(pollPoolTaskStatus, 2000);
+  if (_sharedRegStatsPollTimer) clearInterval(_sharedRegStatsPollTimer);
+  _sharedRegStatsPollTimer = setInterval(refreshSharedRegStats, 10000);
 })();
 </script>
 </body>
