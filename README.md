@@ -192,3 +192,80 @@ config.local.json
 - `.env.example`
 
 另外，Web UI 返回配置时会对 secret 做掩码处理，避免前端直接拿到完整明文。
+
+## GitHub 自动部署
+
+仓库已支持：
+
+- push 到 `main` 后自动部署服务器
+- push 到 `main` 后自动同步到 Hugging Face Space
+
+工作流文件：
+
+```txt
+.github/workflows/deploy.yml
+```
+
+### 服务器 Secrets
+
+GitHub 仓库里至少需要配置这些 Secrets：
+
+- `SERVER_HOST`
+- `SERVER_USER`
+- `SERVER_SSH_KEY`
+- `SERVER_APP_DIR`
+  建议填 `/root/c/chatgpt_register_web`
+- `SERVER_APP_PORT`
+  建议填 `52789`
+
+以及运行配置：
+
+- `DUCKMAIL_API_BASE`
+- `DUCKMAIL_DOMAIN`
+- `DUCKMAIL_BEARER`
+- `POOL_BASE_URL`
+- `POOL_TOKEN`
+- `POOL_TARGET_TYPE`
+- `POOL_TARGET_COUNT`
+- `POOL_PROXY`
+- `POOL_PROBE_WORKERS`
+- `POOL_DELETE_WORKERS`
+- `POOL_INTERVAL_MIN`
+- `PROXY`
+- `WORKERS`
+- `PROXY_TEST_WORKERS`
+- `ENABLE_OAUTH`
+- `OAUTH_REQUIRED`
+- `OAUTH_ISSUER`
+- `OAUTH_CLIENT_ID`
+- `OAUTH_REDIRECT_URI`
+
+### Hugging Face Secrets
+
+如果需要自动同步到 HF，还要配置：
+
+- `HF_TOKEN`
+- `HF_SPACE_ID`
+
+示例：
+
+```txt
+HF_SPACE_ID=xbzsb/bz
+```
+
+### 服务器部署方式
+
+工作流会在服务器上自动：
+
+1. 拉取最新 GitHub 代码
+2. 生成私有 `.env`
+3. 创建或复用 `.venv`
+4. 安装依赖
+5. 生成 `systemd` 服务
+6. 重启服务
+
+服务名默认是：
+
+```txt
+chatgpt-register-web
+```

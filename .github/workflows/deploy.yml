@@ -1,0 +1,138 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+jobs:
+  deploy-server:
+    name: Deploy To Server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          SERVER_APP_DIR: ${{ secrets.SERVER_APP_DIR }}
+          SERVER_APP_PORT: ${{ secrets.SERVER_APP_PORT }}
+          SERVER_REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          DUCKMAIL_API_BASE: ${{ secrets.DUCKMAIL_API_BASE }}
+          DUCKMAIL_DOMAIN: ${{ secrets.DUCKMAIL_DOMAIN }}
+          DUCKMAIL_BEARER: ${{ secrets.DUCKMAIL_BEARER }}
+          POOL_BASE_URL: ${{ secrets.POOL_BASE_URL }}
+          POOL_TOKEN: ${{ secrets.POOL_TOKEN }}
+          POOL_TARGET_TYPE: ${{ secrets.POOL_TARGET_TYPE }}
+          POOL_TARGET_COUNT: ${{ secrets.POOL_TARGET_COUNT }}
+          POOL_PROXY: ${{ secrets.POOL_PROXY }}
+          POOL_PROBE_WORKERS: ${{ secrets.POOL_PROBE_WORKERS }}
+          POOL_DELETE_WORKERS: ${{ secrets.POOL_DELETE_WORKERS }}
+          POOL_INTERVAL_MIN: ${{ secrets.POOL_INTERVAL_MIN }}
+          PROXY: ${{ secrets.PROXY }}
+          WORKERS: ${{ secrets.WORKERS }}
+          PROXY_TEST_WORKERS: ${{ secrets.PROXY_TEST_WORKERS }}
+          ENABLE_OAUTH: ${{ secrets.ENABLE_OAUTH }}
+          OAUTH_REQUIRED: ${{ secrets.OAUTH_REQUIRED }}
+          OAUTH_ISSUER: ${{ secrets.OAUTH_ISSUER }}
+          OAUTH_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_ID }}
+          OAUTH_REDIRECT_URI: ${{ secrets.OAUTH_REDIRECT_URI }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          envs: SERVER_APP_DIR,SERVER_APP_PORT,SERVER_REPO_URL,DUCKMAIL_API_BASE,DUCKMAIL_DOMAIN,DUCKMAIL_BEARER,POOL_BASE_URL,POOL_TOKEN,POOL_TARGET_TYPE,POOL_TARGET_COUNT,POOL_PROXY,POOL_PROBE_WORKERS,POOL_DELETE_WORKERS,POOL_INTERVAL_MIN,PROXY,WORKERS,PROXY_TEST_WORKERS,ENABLE_OAUTH,OAUTH_REQUIRED,OAUTH_ISSUER,OAUTH_CLIENT_ID,OAUTH_REDIRECT_URI
+          script: |
+            set -e
+            APP_DIR="${SERVER_APP_DIR:-/root/c/chatgpt_register_web}"
+            APP_PORT="${SERVER_APP_PORT:-52789}"
+            mkdir -p "$APP_DIR"
+            cat > "$APP_DIR/.env" <<EOF
+            DUCKMAIL_API_BASE=${DUCKMAIL_API_BASE}
+            DUCKMAIL_DOMAIN=${DUCKMAIL_DOMAIN}
+            DUCKMAIL_BEARER=${DUCKMAIL_BEARER}
+            POOL_BASE_URL=${POOL_BASE_URL}
+            POOL_TOKEN=${POOL_TOKEN}
+            POOL_TARGET_TYPE=${POOL_TARGET_TYPE:-codex}
+            POOL_TARGET_COUNT=${POOL_TARGET_COUNT:-666}
+            POOL_PROXY=${POOL_PROXY}
+            POOL_PROBE_WORKERS=${POOL_PROBE_WORKERS:-40}
+            POOL_DELETE_WORKERS=${POOL_DELETE_WORKERS:-10}
+            POOL_INTERVAL_MIN=${POOL_INTERVAL_MIN:-30}
+            PROXY=${PROXY}
+            WORKERS=${WORKERS:-1}
+            PROXY_TEST_WORKERS=${PROXY_TEST_WORKERS:-20}
+            ENABLE_OAUTH=${ENABLE_OAUTH:-true}
+            OAUTH_REQUIRED=${OAUTH_REQUIRED:-true}
+            OAUTH_ISSUER=${OAUTH_ISSUER:-https://auth.openai.com}
+            OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-app_EMoamEEZ73f0CkXaXp7hrann}
+            OAUTH_REDIRECT_URI=${OAUTH_REDIRECT_URI:-http://localhost:1455/auth/callback}
+            EOF
+            chmod 600 "$APP_DIR/.env"
+            REPO_URL="${SERVER_REPO_URL}"
+            BRANCH="${{ github.ref_name }}"
+            SERVICE_NAME="chatgpt-register-web"
+            mkdir -p "$(dirname "$APP_DIR")"
+            if [ ! -d "$APP_DIR/.git" ]; then
+              git clone "$REPO_URL" "$APP_DIR"
+            fi
+            cd "$APP_DIR"
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+            git pull --ff-only origin "$BRANCH"
+            if [ ! -d .venv ]; then
+              python3 -m venv .venv
+            fi
+            .venv/bin/python -m ensurepip --upgrade
+            .venv/bin/python -m pip install -U pip
+            .venv/bin/python -m pip install -r requirements.txt
+            cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
+            [Unit]
+            Description=chatgpt_register_web
+            After=network.target
+
+            [Service]
+            Type=simple
+            WorkingDirectory=${APP_DIR}
+            EnvironmentFile=${APP_DIR}/.env
+            ExecStart=${APP_DIR}/.venv/bin/python -m uvicorn web_app:app --host 0.0.0.0 --port ${APP_PORT}
+            Restart=always
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            systemctl daemon-reload
+            systemctl enable "${SERVICE_NAME}" >/dev/null 2>&1 || true
+            systemctl restart "${SERVICE_NAME}"
+            systemctl --no-pager --full status "${SERVICE_NAME}" | sed -n '1,30p'
+
+  deploy-hf:
+    name: Deploy To Hugging Face
+    runs-on: ubuntu-latest
+    if: ${{ secrets.HF_TOKEN != '' && secrets.HF_SPACE_ID != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Export clean tree
+        run: |
+          set -e
+          tmpdir="$(mktemp -d)"
+          git archive HEAD | tar -x -C "$tmpdir"
+          rm -rf "$tmpdir/.agents" "$tmpdir/.codex" "$tmpdir/.venv" "$tmpdir/codex_tokens" "$tmpdir/__pycache__" "$tmpdir/.git"
+          rm -f "$tmpdir/.env" "$tmpdir/.env.local" "$tmpdir/config.local.json" "$tmpdir/ak.txt" "$tmpdir/rk.txt" "$tmpdir/registered_accounts.txt" "$tmpdir/.DS_Store" "$tmpdir/uvicorn.log"
+          cd "$tmpdir"
+          git init
+          git config user.name "pixian5"
+          git config user.email "pixian5@users.noreply.github.com"
+          git add .
+          git commit -m "deploy ${GITHUB_SHA}"
+          git remote add origin "https://oauth2:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_ID}"
+          git push -f origin HEAD:main
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_ID: ${{ secrets.HF_SPACE_ID }}
