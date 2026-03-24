@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>14</title>
+  <title>15</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1019,7 +1019,7 @@ input:focus, select:focus {
         </div>
         <div class="field-group">
           <label>Bearer Token</label>
-          <input type="password" id="cfg-duckmail-bearer" placeholder="dk_xxxxx">
+          <input type="password" id="cfg-duckmail-bearer" placeholder="dk_xxxxx" autocomplete="off" autocapitalize="off" spellcheck="false" data-1p-ignore="true">
         </div>
       </div>
 
@@ -1032,7 +1032,7 @@ input:focus, select:focus {
         </div>
         <div class="field-group">
           <label>Token</label>
-          <input type="password" id="cfg-pool-token" placeholder="Bearer Token">
+          <input type="password" id="cfg-pool-token" placeholder="Bearer Token" autocomplete="off" autocapitalize="off" spellcheck="false" data-1p-ignore="true">
         </div>
         <div class="field-group">
           <label>池代理（可选）</label>
@@ -1115,7 +1115,7 @@ input:focus, select:focus {
     </div><!-- /left-body -->
 
     <div class="left-footer">
-      <button class="btn btn-primary btn-full" id="btn-save" onclick="saveSettings()">保存设置</button>
+      <button class="btn btn-primary btn-full" id="btn-save" type="button" onclick="saveSettings()">保存设置</button>
     </div>
   </aside>
 
@@ -1131,7 +1131,7 @@ input:focus, select:focus {
     <div class="card pool-card">
       <div class="card-header">
         <div class="card-title">池状态</div>
-        <button class="btn btn-sm btn-secondary" id="btn-refresh-pool" onclick="refreshPoolStatus()">↻ 刷新</button>
+        <button class="btn btn-sm btn-secondary" id="btn-refresh-pool" type="button" onclick="refreshPoolStatus()">↻ 刷新</button>
       </div>
       <div class="pool-status-content">
         <div class="pool-main-row">
@@ -1157,12 +1157,12 @@ input:focus, select:focus {
 
         <!-- idle: 显示 [开始检查] -->
         <div id="inspect-idle">
-          <button class="btn btn-primary" id="btn-inspect" onclick="startInspect()">开始检查</button>
+          <button class="btn btn-primary" id="btn-inspect" type="button" onclick="startInspect()">开始检查</button>
         </div>
 
         <!-- inspecting: spinner -->
         <div id="inspect-inspecting" style="display:none">
-          <button class="btn btn-primary" disabled>
+          <button class="btn btn-primary" type="button" disabled>
             <span class="spinner"></span> 检查中...
           </button>
         </div>
@@ -1218,7 +1218,7 @@ input:focus, select:focus {
 
       <!-- idle: 注册按钮 -->
       <div id="regonly-idle">
-        <button class="btn btn-primary" onclick="startRegOnly()">注册账号</button>
+        <button class="btn btn-primary" type="button" onclick="startRegOnly()">注册账号</button>
         <div id="regonly-shared-success" style="display:none;font-size:13px;color:var(--text-secondary);margin-top:10px"></div>
       </div>
 
@@ -1229,8 +1229,8 @@ input:focus, select:focus {
           <input type="number" id="regonly-count" min="1" max="500" data-default-value="regonly_count">
         </div>
         <div style="display:flex;gap:8px">
-          <button class="btn btn-success btn-sm" onclick="confirmRegOnly()">开始注册</button>
-          <button class="btn btn-secondary btn-sm" onclick="cancelRegOnly()">取消</button>
+          <button class="btn btn-success btn-sm" type="button" onclick="confirmRegOnly()">开始注册</button>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="cancelRegOnly()">取消</button>
         </div>
       </div>
 
@@ -1240,13 +1240,13 @@ input:focus, select:focus {
           <span class="spinner"></span>
           <span id="regonly-progress" style="font-size:13px;color:var(--text-secondary)">注册中...</span>
         </div>
-        <button class="btn btn-danger btn-sm" onclick="stopRegOnly()">停止</button>
+        <button class="btn btn-danger btn-sm" type="button" onclick="stopRegOnly()">停止</button>
       </div>
 
       <!-- done: 结果 -->
       <div id="regonly-done" style="display:none">
         <div id="regonly-result" style="font-size:13px;margin-bottom:10px"></div>
-        <button class="btn btn-secondary btn-sm" onclick="resetRegOnly()">重置</button>
+        <button class="btn btn-secondary btn-sm" type="button" onclick="resetRegOnly()">重置</button>
       </div>
     </div><!-- /仅注册卡片 -->
 
@@ -1257,23 +1257,23 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">14</div>
+          <div class="version-chip">15</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
-            <button class="btn btn-sm btn-secondary" id="btn-refresh-accounts" onclick="refreshAccounts()">↻ 刷新</button>
-            <button class="btn btn-sm btn-secondary" id="btn-sync-accounts" onclick="doSync()">⇅ 同步</button>
+            <button class="btn btn-sm btn-secondary" id="btn-refresh-accounts" type="button" onclick="refreshAccounts()">↻ 刷新</button>
+            <button class="btn btn-sm btn-secondary" id="btn-sync-accounts" type="button" onclick="doSync()">⇅ 同步</button>
           </div>
           <div class="toolbar-actions" data-toolbar="logs">
-            <button class="btn btn-sm btn-secondary" id="btn-stop-pool" onclick="stopPoolFill()" disabled>停止补号</button>
-            <button class="btn btn-sm btn-secondary" onclick="scrollLogsTop()">到顶部</button>
-            <button class="btn btn-sm btn-secondary" onclick="scrollLogsBottom()">到底部</button>
-            <button class="btn btn-sm btn-secondary" onclick="copyLogs()">复制</button>
-            <button class="btn btn-sm btn-secondary" onclick="clearLog()">清空</button>
+            <button class="btn btn-sm btn-secondary" id="btn-stop-pool" type="button" onclick="stopPoolFill()" disabled>停止补号</button>
+            <button class="btn btn-sm btn-secondary" type="button" onclick="scrollLogsTop()">到顶部</button>
+            <button class="btn btn-sm btn-secondary" type="button" onclick="scrollLogsBottom()">到底部</button>
+            <button class="btn btn-sm btn-secondary" type="button" onclick="copyLogs()">复制</button>
+            <button class="btn btn-sm btn-secondary" type="button" onclick="clearLog()">清空</button>
           </div>
           <div class="tab-bar">
-            <button class="tab-btn active" data-tab="accounts">账号列表</button>
-            <button class="tab-btn" data-tab="logs">实时日志</button>
+            <button class="tab-btn active" type="button" data-tab="accounts">账号列表</button>
+            <button class="tab-btn" type="button" data-tab="logs">实时日志</button>
           </div>
         </div>
       </div>
