@@ -24,14 +24,15 @@ from urllib.parse import urlparse, parse_qs, urlencode
 from typing import Optional
 
 from curl_cffi import requests as curl_requests
+from config_runtime import load_runtime_config
 
 # ================= 加载配置 =================
 def _load_config():
-    """从 config.json 加载配置，环境变量优先级更高"""
-    config = {
+    """读取运行配置，支持 config.local.json / .env / 环境变量覆盖"""
+    defaults = {
         "total_accounts": 3,
         "duckmail_api_base": "https://api.duckmail.sbs",
-        "duckmail_domain": "duckmail.sbs",
+        "duckmail_domain": "codex.sbbz.tech",
         "duckmail_bearer": "",
         "proxy": "",
         "output_file": "registered_accounts.txt",
@@ -44,32 +45,7 @@ def _load_config():
         "rk_file": "rk.txt",
         "token_json_dir": "codex_tokens",
     }
-
-    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                file_config = json.load(f)
-                config.update(file_config)
-        except Exception as e:
-            print(f"⚠️ 加载 config.json 失败: {e}")
-
-    # 环境变量优先级更高
-    config["duckmail_api_base"] = os.environ.get("DUCKMAIL_API_BASE", config["duckmail_api_base"])
-    config["duckmail_domain"] = os.environ.get("DUCKMAIL_DOMAIN", config["duckmail_domain"])
-    config["duckmail_bearer"] = os.environ.get("DUCKMAIL_BEARER", config["duckmail_bearer"])
-    config["proxy"] = os.environ.get("PROXY", config["proxy"])
-    config["total_accounts"] = int(os.environ.get("TOTAL_ACCOUNTS", config["total_accounts"]))
-    config["enable_oauth"] = os.environ.get("ENABLE_OAUTH", config["enable_oauth"])
-    config["oauth_required"] = os.environ.get("OAUTH_REQUIRED", config["oauth_required"])
-    config["oauth_issuer"] = os.environ.get("OAUTH_ISSUER", config["oauth_issuer"])
-    config["oauth_client_id"] = os.environ.get("OAUTH_CLIENT_ID", config["oauth_client_id"])
-    config["oauth_redirect_uri"] = os.environ.get("OAUTH_REDIRECT_URI", config["oauth_redirect_uri"])
-    config["ak_file"] = os.environ.get("AK_FILE", config["ak_file"])
-    config["rk_file"] = os.environ.get("RK_FILE", config["rk_file"])
-    config["token_json_dir"] = os.environ.get("TOKEN_JSON_DIR", config["token_json_dir"])
-
-    return config
+    return load_runtime_config(defaults, os.path.dirname(os.path.abspath(__file__)))
 
 
 def _as_bool(value):

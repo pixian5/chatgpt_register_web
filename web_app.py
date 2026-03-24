@@ -27,6 +27,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+from config_runtime import mask_config_secrets, restore_masked_secrets
 import register as reg
 
 # ============================================================
@@ -238,19 +239,21 @@ async def index():
 
 @app.get("/api/config")
 async def get_config():
-    return reg.load_config()
+    return mask_config_secrets(reg.load_config())
 
 
 @app.post("/api/config")
 async def save_config(config: dict = Body(...)):
     # 移除 _comment 字段保护
     config.pop("_comment", None)
-    ok = reg.save_config(config)
+    current = reg.load_config()
+    merged = restore_masked_secrets(config, current)
+    ok = reg.save_config(merged)
     if not ok:
         raise HTTPException(status_code=500, detail="保存失败")
 
     # 如果守护进程已启用，同步更新其运行时配置（下次周期生效）
-    pool = config.get("pool", {})
+    pool = merged.get("pool", {})
     if _pool_daemon["enabled"] and pool:
         _pool_daemon["config"] = _normalize_pool_runtime_config(pool, _pool_daemon["config"])
         _pool_daemon["interval_min"] = _to_int(

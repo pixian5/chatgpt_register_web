@@ -10,138 +10,59 @@ pinned: false
 
 # pam管理 Web UI
 
-这是一个基于 FastAPI 的管理面板，用来统一处理以下几类工作：
+这个项目已经改成“仓库不存真实配置”的模式：
 
-- 批量注册账号
-- 查看注册日志与结果
-- 管理本地 token 文件
-- 对接 CliProxyAPI 账号池
-- 清理失效账号、补号、守护补号
-- 通过 Web UI 持续观察运行状态
+- 仓库内只保留示例配置
+- 本地开发使用 `.env`
+- GitHub Actions 使用 `Secrets`
+- Hugging Face Space 使用 Space Secrets / Variables
+- Ubuntu 服务器使用环境变量或 `config.local.json`
 
-项目当前同时用于：
+## 配置优先级
 
-- GitHub 仓库维护
-- Hugging Face Space 部署
-- Ubuntu 服务器部署
+运行时配置加载顺序如下，越靠后优先级越高：
 
-README 下面的内容按“实际维护流程”编写，不是模板文档。
+1. 代码内默认值
+2. `config.json`（仓库示例，不应存真实 secret）
+3. `config.local.json`（本地/服务器私有配置，不提交）
+4. `.env`
+5. `.env.local`
+6. 系统环境变量
 
-## 目录结构
-
-项目核心文件如下：
-
-- `web_app.py`
-  FastAPI 主程序，提供页面、REST API、WebSocket、守护进程、补号状态管理等能力。
-
-- `register.py`
-  项目业务库，负责封装注册、清理、同步、补号、守护补号等核心逻辑。
-
-- `chatgpt_register.py`
-  账号注册底层实现。
-
-- `templates/index.html`
-  单页前端界面，包含设置、日志、账号列表、手动补号、守护进程等全部 UI 逻辑。
-
-- `config.json`
-  默认配置文件。
-
-- `requirements.txt`
-  Python 依赖清单。
-
-- `Dockerfile`
-  Hugging Face Space 的 Docker 部署入口。
-
-## 运行环境
-
-推荐环境：
-
-- Python `3.11+`
-- Linux / macOS
-- Ubuntu 服务器用于线上运行
-- Hugging Face Space 用于公网页面部署
-
-当前依赖：
+Web UI 的“保存配置”现在会写入：
 
 ```txt
-requests>=2.32.5
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
-curl-cffi>=0.7.0
-python-multipart>=0.0.9
+config.local.json
 ```
 
-## 配置说明
+不会再把真实值写回仓库里的示例配置。
 
-配置文件为 `config.json`，常用字段如下：
+## 关键文件
 
-- `duckmail_api_base`
-  临时邮箱 API 地址。
-
-- `duckmail_domain`
-  注册邮箱后缀。
-
-- `duckmail_bearer`
-  临时邮箱 API 鉴权。
-
-- `proxy`
-  默认代理。
-
-- `workers`
-  注册并发数。
-
-- `proxy_test_workers`
-  代理测试并发数。
-
-- `enable_oauth`
-  是否启用 OAuth 流程。
-
-- `oauth_required`
-  是否要求 OAuth 成功。
-
-- `token_json_dir`
-  本地 token 保存目录。
-
-- `pool.base_url`
-  CliProxyAPI 地址。
-
-- `pool.token`
-  CliProxyAPI Token。
-
-- `pool.target_type`
-  目标账号类型，当前默认 `codex`。
-
-- `pool.target_count`
-  目标数量，当前默认值是 `666`。
-
-- `pool.probe_workers`
-  池探测并发数。
-
-- `pool.delete_workers`
-  池清理并发数。
-
-- `pool.interval_min`
-  守护进程间隔分钟数。
+- `web_app.py`
+  FastAPI 主程序
+- `register.py`
+  业务逻辑与运行配置读写
+- `chatgpt_register.py`
+  注册底层实现
+- `config_runtime.py`
+  新增的统一配置加载模块
+- `templates/index.html`
+  前端页面
+- `.env.example`
+  本地 / CI / 服务器环境变量模板
+- `config.example.json`
+  JSON 示例配置
 
 ## 本地开发
 
-如果只是修改代码、校验语法、提交发布，使用下面流程即可。
-
-### 1. 进入项目目录
-
-```bash
-cd /Users/x/code/code_register_web
-```
-
-### 2. 创建虚拟环境
-
-如果还没有 `.venv`：
+### 1. 创建虚拟环境
 
 ```bash
 python3 -m venv .venv
 ```
 
-### 3. 安装依赖
+### 2. 安装依赖
 
 ```bash
 .venv/bin/python -m ensurepip --upgrade
@@ -149,274 +70,125 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-### 4. 做语法检查
+### 3. 准备本地配置
 
 ```bash
-python3 -m py_compile web_app.py register.py chatgpt_register.py
+cp .env.example .env
 ```
 
-说明：
+然后把真实值只写进 `.env`，不要写进 `config.json`。
 
-- 当前维护约定是“本机默认不启动项目”。
-- 本机主要用于改代码、校验、提交、发布。
-- 真正运行以 Hugging Face 和 Ubuntu 服务器为准。
+## 环境变量
 
-## 本地手动启动方式
+推荐使用这些变量名：
 
-如果你确实需要手动临时运行：
+```env
+DUCKMAIL_API_BASE=https://api.duckmail.sbs
+DUCKMAIL_DOMAIN=codex.sbbz.tech
+DUCKMAIL_BEARER=
 
-```bash
-.venv/bin/python -m uvicorn web_app:app --host 127.0.0.1 --port 52789
+POOL_BASE_URL=https://or.sbbz.tech:52788/
+POOL_TOKEN=
+POOL_TARGET_TYPE=codex
+POOL_TARGET_COUNT=666
+POOL_PROXY=
+POOL_PROBE_WORKERS=40
+POOL_DELETE_WORKERS=10
+POOL_INTERVAL_MIN=30
+
+PROXY=
+WORKERS=1
+PROXY_TEST_WORKERS=20
+
+ENABLE_OAUTH=true
+OAUTH_REQUIRED=true
+OAUTH_ISSUER=https://auth.openai.com
+OAUTH_CLIENT_ID=app_EMoamEEZ73f0CkXaXp7hrann
+OAUTH_REDIRECT_URI=http://localhost:1455/auth/callback
 ```
 
-访问：
+## GitHub Secrets
 
-```txt
-http://127.0.0.1:52789
-```
+如果你通过 GitHub Actions 构建或部署，建议把下面这些值放进仓库 Secrets：
 
-停止：
+- `DUCKMAIL_API_BASE`
+- `DUCKMAIL_DOMAIN`
+- `DUCKMAIL_BEARER`
+- `POOL_BASE_URL`
+- `POOL_TOKEN`
 
-```bash
-Ctrl + C
-```
+如果是 Actions 运行容器或远程部署，把这些 Secrets 作为环境变量注入即可。
 
-但默认维护流程中不需要本机启动。
+## Hugging Face Space
 
-## Hugging Face Space 部署
+这个项目使用 Docker Space 部署。
 
-当前 Space 信息：
+在 Hugging Face Space 后台：
 
-- Space: `xbzsb/bz`
-- 运行方式：Docker
+`Settings -> Variables and secrets`
 
-Space 部署入口来自仓库顶部的 Front Matter 和 `Dockerfile`。
+建议这样放：
 
-### Docker 启动命令
+- 非敏感值放 `Variables`
+  - `DUCKMAIL_API_BASE`
+  - `DUCKMAIL_DOMAIN`
+  - `POOL_BASE_URL`
+- 敏感值放 `Secrets`
+  - `DUCKMAIL_BEARER`
+  - `POOL_TOKEN`
 
-容器内最终启动的是：
-
-```bash
-python -m uvicorn web_app:app --host 0.0.0.0 --port 7860
-```
-
-### 当前发布方式
-
-为了避免把本地运行态文件和敏感文件一起推上去，发布 HF 时采用“导出净化副本再强推”的方式：
-
-1. 从当前 Git 提交导出干净副本。
-2. 删除不应该上传到 HF 的本地文件。
-3. 在临时目录重新初始化 Git。
-4. 强推到 HF Space 仓库。
-
-典型流程：
-
-```bash
-tmpdir=$(mktemp -d)
-git archive HEAD | tar -x -C "$tmpdir"
-rm -rf "$tmpdir/.agents" "$tmpdir/.codex" "$tmpdir/.venv" "$tmpdir/codex_tokens" "$tmpdir/__pycache__"
-rm -f "$tmpdir/ak.txt" "$tmpdir/rk.txt" "$tmpdir/registered_accounts.txt" "$tmpdir/.DS_Store" "$tmpdir/uvicorn.log"
-cd "$tmpdir"
-git init
-git config user.name "pixian5"
-git config user.email "pixian5@users.noreply.github.com"
-git add .
-git commit -m "deploy <commit>"
-git remote add origin "https://<hf-user>:<hf-token>@huggingface.co/spaces/xbzsb/bz"
-git push -f origin HEAD:main
-```
-
-### 不应上传到 HF 的内容
-
-这些内容属于本地运行态或敏感文件，不应该进 Space：
-
-- `ak.txt`
-- `rk.txt`
-- `registered_accounts.txt`
-- `.agents/`
-- `.codex/`
-- `.venv/`
-- `codex_tokens/`
-- `uvicorn.log`
+Docker 启动时会自动读这些环境变量，不需要再把真实值提交进仓库。
 
 ## Ubuntu 服务器部署
 
-当前线上服务器：
+推荐两种方式：
 
-- 域名：`or.sbbz.tech`
-- 运行目录：`/root/c/chatgpt_register_web`
-- 服务端口：`52789`
-
-### 服务器部署原则
-
-服务器更新代码时，不应该覆盖这些运行态数据：
-
-- `ak.txt`
-- `rk.txt`
-- `registered_accounts.txt`
-- `config.json`
-- `codex_tokens/`
-
-因为这些文件记录的是实际运行状态、账号、配置和 token。
-
-### 服务器更新流程
-
-当前稳定流程如下：
-
-1. 备份运行态文件。
-2. `git stash` 暂存运行态修改。
-3. `git fetch` + `git pull --ff-only` 更新代码。
-4. 恢复运行态文件。
-5. 检查 `.venv`，没有就创建。
-6. 安装依赖。
-7. 执行语法检查。
-8. 杀掉旧的 `uvicorn` 进程。
-9. 启动新的 `uvicorn` 进程。
-
-### 服务器启动命令
-
-```bash
-/root/c/chatgpt_register_web/.venv/bin/python -m uvicorn web_app:app --host 0.0.0.0 --port 52789
-```
-
-常见后台启动方式：
-
-```bash
-nohup /root/c/chatgpt_register_web/.venv/bin/python -m uvicorn web_app:app --host 0.0.0.0 --port 52789 >/root/c/chatgpt_register_web/uvicorn.log 2>&1 &
-```
-
-### 访问地址
-
-```txt
-http://or.sbbz.tech:52789
-```
-
-## Git 提交流程
-
-每次代码修改完成后，推荐固定步骤：
-
-1. 修改代码。
-2. 运行语法检查。
-3. 提交 Git。
-4. 推送 GitHub。
-5. 部署 HF。
-6. 部署服务器。
-
-### 提交示例
-
-```bash
-git add .
-git commit -m "中文提交信息"
-git push origin main
-```
-
-当前远程仓库：
-
-```txt
-origin = https://github.com/pixian5/chatgpt_register_web.git
-```
-
-## 页面功能概览
-
-当前 Web UI 主要包含这些模块：
-
-- 设置区
-  管理邮箱、代理、OAuth、账号池、守护进程参数。
-
-- 手动补号
-  检查账号池、清理失效账号、执行补号。
-
-- 守护进程
-  定时维护账号池。
-
-- 仅注册
-  只做注册，不处理池同步。
-
-- 账号列表
-  查看当前账号状态。
-
-- 实时日志
-  显示池维护、补号、注册日志。
-
-## 实时统计说明
-
-当前补号统计机制分成两层：
-
-### 1. 后端主统计
-
-后端维护实时统计接口：
-
-```txt
-/api/pool/reg-stats
-```
-
-这个接口会记录：
-
-- `mode`
-- `running`
-- `success`
-- `fail`
-- `total`
-
-在手动补号或守护补号过程中，注册每完成一次，后端就会更新一次统计。
-
-### 2. 前端兜底覆盖
-
-前端除了在任务状态轮询时读取后端统计外，还额外做了每 `10` 秒一次的兜底覆盖：
-
-- 每隔 10 秒重新请求 `/api/pool/reg-stats`
-- 用服务端结果覆盖当前页面显示
-
-这样做是为了避免：
-
-- 页面刷新后统计丢失
-- WebSocket 或前端本地计数发生漂移
-- 多标签页显示不一致
-
-## 常见维护注意事项
-
-### 1. 不要把运行态文件提交进 Git
-
-尤其不要把下面这些文件当作代码变更一起提交：
-
-- `ak.txt`
-- `rk.txt`
-- `registered_accounts.txt`
-- `codex_tokens/`
-
-### 2. 服务器配置和仓库默认值不是一回事
+### 方式一：环境变量
 
 例如：
 
-- 仓库默认 `pool.target_count` 可以是 `666`
-- 服务器运行中的 `config.json` 可能还是别的值
+```bash
+export DUCKMAIL_API_BASE="https://api.duckmail.sbs"
+export DUCKMAIL_DOMAIN="codex.sbbz.tech"
+export DUCKMAIL_BEARER="your-real-token"
+export POOL_BASE_URL="https://or.sbbz.tech:52788/"
+export POOL_TOKEN="your-real-token"
+```
 
-部署服务器时如果恢复了旧 `config.json`，运行值会继续沿用服务器原配置。
+然后再启动：
 
-### 3. 修改默认值时要分清两层
+```bash
+python -m uvicorn web_app:app --host 0.0.0.0 --port 52789
+```
 
-如果要改“默认值”，通常要同时考虑：
+### 方式二：私有配置文件
 
-- 代码里的默认值
-- 仓库里的 `config.json`
-- 服务器当前实际运行的 `config.json`
+在服务器项目目录创建：
 
-### 4. 本机不是主运行环境
+```txt
+config.local.json
+```
 
-当前维护约定：
+或：
 
-- 本机默认不启动
-- 本机只负责改代码、提交、发布、校验
-- 真正运行环境是 HF 和 Ubuntu 服务器
+```txt
+.env
+```
 
-## 后续建议
+这两个文件都已被 `.gitignore` 忽略，不会进仓库。
 
-如果后面继续维护这个项目，建议 README 长期保持同步更新以下内容：
+## 安全说明
 
-- 当前默认值
-- 当前部署地址
-- 当前服务器路径
-- 当前发布方式
-- 当前不提交的敏感文件列表
+以下文件不会被提交：
 
-这样别人接手时，不需要再重新摸索部署链路。
+- `.env`
+- `.env.local`
+- `config.local.json`
+
+仓库中的这些文件只保留示例值：
+
+- `config.json`
+- `config.example.json`
+- `.env.example`
+
+另外，Web UI 返回配置时会对 secret 做掩码处理，避免前端直接拿到完整明文。

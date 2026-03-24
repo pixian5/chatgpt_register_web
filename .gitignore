@@ -14,3 +14,6 @@ uvicorn.log
 codex_tokens
 
 *.zip
+.env
+.env.local
+config.local.json

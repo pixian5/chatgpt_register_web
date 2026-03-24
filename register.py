@@ -26,6 +26,8 @@ import requests as _requests
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
+from config_runtime import _deep_merge_dict, load_runtime_config, save_runtime_config
+
 urllib3.disable_warnings(InsecureRequestWarning)
 
 # ============================================================
@@ -46,7 +48,7 @@ DEFAULT_POOL_INTERVAL_MIN = 30
 DEFAULT_CONFIG = {
     "total_accounts": DEFAULT_TOTAL_ACCOUNTS,
     "duckmail_api_base": "https://api.duckmail.sbs",
-    "duckmail_domain": "duckmail.sbs",
+    "duckmail_domain": "codex.sbbz.tech",
     "duckmail_bearer": "",
     "proxy": "",
     "workers": DEFAULT_WORKERS,
@@ -61,7 +63,7 @@ DEFAULT_CONFIG = {
     "token_json_dir": "codex_tokens",
     "proxy_test_workers": DEFAULT_PROXY_TEST_WORKERS,
     "pool": {
-        "base_url": "",
+        "base_url": "https://or.sbbz.tech:52788/",
         "token": "",
         "target_type": DEFAULT_POOL_TARGET_TYPE,
         "target_count": DEFAULT_POOL_TARGET_COUNT,
@@ -72,15 +74,6 @@ DEFAULT_CONFIG = {
         "interval_min": DEFAULT_POOL_INTERVAL_MIN,
     },
 }
-
-
-def _deep_merge_dict(base: dict, override: dict) -> dict:
-    for key, value in override.items():
-        if isinstance(value, dict) and isinstance(base.get(key), dict):
-            _deep_merge_dict(base[key], value)
-        else:
-            base[key] = value
-    return base
 
 
 def _resolve_token_dir(config: Optional[dict] = None) -> str:
@@ -1262,29 +1255,13 @@ def test_proxies_concurrent(
 # ============================================================
 
 def load_config() -> dict:
-    """读取 config.json"""
-    cfg_path = os.path.join(_BASE_DIR, "config.json")
-    defaults = copy.deepcopy(DEFAULT_CONFIG)
-    if os.path.exists(cfg_path):
-        try:
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                file_cfg = json.load(f)
-                if isinstance(file_cfg, dict):
-                    _deep_merge_dict(defaults, file_cfg)
-        except Exception:
-            pass
-    return defaults
+    """读取运行配置，支持 config.local.json / .env / 环境变量覆盖"""
+    return load_runtime_config(DEFAULT_CONFIG, _BASE_DIR)
 
 
 def save_config(config: dict) -> bool:
-    """保存 config.json"""
-    cfg_path = os.path.join(_BASE_DIR, "config.json")
-    try:
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception:
-        return False
+    """保存本地运行配置到 config.local.json"""
+    return save_runtime_config(config, _BASE_DIR)
 
 
 # ============================================================
