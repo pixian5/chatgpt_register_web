@@ -113,12 +113,28 @@ jobs:
   deploy-hf:
     name: Deploy To Hugging Face
     runs-on: ubuntu-latest
-    if: ${{ secrets.HF_TOKEN != '' && secrets.HF_SPACE_ID != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check HF secrets
+        id: hf-check
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_ID: ${{ secrets.HF_SPACE_ID }}
+        run: |
+          if [ -n "$HF_TOKEN" ] && [ -n "$HF_SPACE_ID" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip HF deploy when secrets missing
+        if: steps.hf-check.outputs.enabled != 'true'
+        run: echo "HF_TOKEN 或 HF_SPACE_ID 未配置，跳过 HF 部署"
+
       - name: Export clean tree
+        if: steps.hf-check.outputs.enabled == 'true'
         run: |
           set -e
           tmpdir="$(mktemp -d)"
