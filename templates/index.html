@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>20</title>
+  <title>21</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -350,6 +350,8 @@ input:focus, select:focus {
 .result-item.red b { color: var(--red); }
 .result-item.green b { color: var(--green); }
 .result-item.orange b { color: var(--orange); }
+.result-item.blue b { color: var(--blue); }
+.result-item.purple b { color: var(--purple); }
 
 .inspect-actions {
   display: flex;
@@ -1171,6 +1173,8 @@ input:focus, select:focus {
         <div id="inspect-inspected" style="display:none">
           <div class="inspect-result-row">
             <span class="result-item red">失效 <b id="res-invalid">0</b></span>
+            <span class="result-item purple">远程401 <b id="res-remote-invalid">0</b></span>
+            <span class="result-item blue">本地401 <b id="res-local-invalid">0</b></span>
             <span class="result-item orange">缺口 <b id="res-gap">0</b></span>
             <span class="result-item green">有效 <b id="res-valid">0</b></span>
             <span class="result-item">目标 <b id="res-target">0</b></span>
@@ -1257,7 +1261,7 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">20</div>
+          <div class="version-chip">21</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
@@ -2172,12 +2176,14 @@ async function startInspect(options = {}) {
     }
 
     _inspectResult = await r.json();
-    const { invalid_count, valid_count, gap } = _inspectResult;
+    const { invalid_count, valid_count, gap, remote_invalid_count = 0, local_invalid_count = 0 } = _inspectResult;
 
     await refreshPoolStatus();
 
     // 填充结果卡
     document.getElementById('res-invalid').textContent = invalid_count;
+    document.getElementById('res-remote-invalid').textContent = remote_invalid_count;
+    document.getElementById('res-local-invalid').textContent = local_invalid_count;
     document.getElementById('res-valid').textContent   = valid_count;
     document.getElementById('res-target').textContent  = target_count;
     document.getElementById('res-gap').textContent     = gap;
@@ -2197,7 +2203,7 @@ async function startInspect(options = {}) {
       }
     }
 
-    appendLog(`[Pool] 校验并清理完成: 失效=${invalid_count}, 有效=${valid_count}, 缺口=${gap}`);
+    appendLog(`[Pool] 校验并清理完成: 失效=${invalid_count}, 远程401=${remote_invalid_count}, 本地401=${local_invalid_count}, 有效=${valid_count}, 缺口=${gap}`);
   } catch (e) {
     appendLog('[ERROR] 检查请求异常: ' + e);
     _showInspectPanel('idle');
