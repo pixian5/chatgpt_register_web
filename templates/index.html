@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>11</title>
+  <title>12</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1257,7 +1257,7 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">11</div>
+          <div class="version-chip">12</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
@@ -1329,7 +1329,7 @@ let _poolLogTransport = 'init';
 const LOG_BUFFER_MAX = 5000;
 const APP_DEFAULTS = Object.freeze({
   target_type: 'codex',
-  target_count: 100,
+  target_count: 666,
   workers: 1,
   pool_interval_min: 30,
   pool_probe_workers: 20,
@@ -1477,6 +1477,40 @@ function _syncSharedRegResult(mode, success, fail) {
   _sharedRegSuccessCount = success;
   _sharedRegFailCount = fail;
   _renderSharedRegSuccess();
+}
+
+function _applySharedRegStats(d) {
+  const mode = String(d.mode || '');
+  const success = Number(d.success || 0);
+  const fail = Number(d.fail || 0);
+  const total = Number(d.total || 0);
+  const running = !!d.running;
+
+  if (!mode) {
+    _clearSharedRegSuccess();
+    return;
+  }
+
+  _sharedRegStatsMode = mode;
+  _sharedRegSuccessCount = success;
+  _sharedRegFailCount = fail;
+  _renderSharedRegSuccess();
+
+  if (mode === 'manual_fill') {
+    const runningMsg = document.getElementById('running-msg');
+    if (running) {
+      if (_inspectState !== 'running') _showInspectPanel('running');
+      if (runningMsg) runningMsg.textContent = `步骤 2/2  补号中 (${total} 个)...`;
+    }
+  }
+}
+
+async function refreshSharedRegStats() {
+  try {
+    const r = await fetch('/api/pool/reg-stats', { cache: 'no-store' });
+    const d = await r.json();
+    _applySharedRegStats(d);
+  } catch (e) {}
 }
 
 function scheduleRefreshPoolStatus(delay = 150) {
@@ -2338,6 +2372,7 @@ async function pollDaemonStatus() {
     }
     _daemonWasRunning = d.running_now;
     _updateDaemonUI(d);
+    await refreshSharedRegStats();
   } catch {}
 }
 
@@ -2348,6 +2383,7 @@ async function pollPoolTaskStatus() {
     _poolTaskRunning = !!d.running;
     _poolTaskName = d.task || '';
     updateStopPoolButton();
+    await refreshSharedRegStats();
   } catch {}
 }
 
@@ -2609,6 +2645,7 @@ async function doSync() {
   });
   await loadSettings();
   await restoreRegOnlyStatus();
+  await refreshSharedRegStats();
   await initPoolLogCursor(true);
   connectPoolWs();
 

@@ -69,6 +69,13 @@ _pool_state: Dict[str, Any] = {
     "stop_event": None,
     "stop_requested": False,
 }
+_shared_reg_state: Dict[str, Any] = {
+    "mode": "",
+    "running": False,
+    "success": 0,
+    "fail": 0,
+    "total": 0,
+}
 _pool_log_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
 _pool_ws_clients: List[WebSocket] = []
 _POOL_LOG_HISTORY_MAX = 500
@@ -184,6 +191,33 @@ def _make_reg_progress_cb():
         _reg_state["fail"] = fail
         _reg_state["total"] = total
     return cb
+
+
+def _set_shared_reg_state(mode: str = "", running: bool = False, success: int = 0, fail: int = 0, total: int = 0):
+    _shared_reg_state.update({
+        "mode": str(mode or ""),
+        "running": bool(running),
+        "success": int(success),
+        "fail": int(fail),
+        "total": int(total),
+    })
+
+
+def _make_shared_reg_progress_cb(mode: str):
+    def cb(success: int, fail: int, total: int):
+        _set_shared_reg_state(mode=mode, running=True, success=success, fail=fail, total=total)
+    return cb
+
+
+def _finish_shared_reg_state(mode: str, result: Optional[dict] = None):
+    result = result or {}
+    _set_shared_reg_state(
+        mode=mode,
+        running=False,
+        success=result.get("success", _shared_reg_state.get("success", 0)),
+        fail=result.get("fail", _shared_reg_state.get("fail", 0)),
+        total=result.get("total", _shared_reg_state.get("total", 0)),
+    )
 
 
 # ============================================================
@@ -454,12 +488,12 @@ async def pool_fill(body: dict = Body(...)):
     _pool_state["running"] = True
     _pool_state["task"] = "fill"
     _pool_state["stop_requested"] = False
+    _set_shared_reg_state(mode="manual_fill", running=True, success=0, fail=0, total=count)
     log_cb = _make_pool_log_cb()
     stop_event = threading.Event()
     _pool_state["stop_event"] = stop_event
 
-    def progress_cb(s, f, t):
-        pass
+    progress_cb = _make_shared_reg_progress_cb("manual_fill")
 
     def run_task():
         try:
@@ -475,8 +509,16 @@ async def pool_fill(body: dict = Body(...)):
                 target_count=target_count,
                 target_type=target_type,
             )
+            _set_shared_reg_state(
+                mode="manual_fill",
+                running=False,
+                success=result.get("success", 0),
+                fail=result.get("fail", 0),
+                total=result.get("total", count),
+            )
             log_cb(f"[Pool] 补号完成: 成功={result.get('success')}, 失败={result.get('fail')}")
         except Exception as e:
+            _set_shared_reg_state(mode="manual_fill", running=False)
             log_cb(f"[ERROR] 补号异常: {e}")
         finally:
             _pool_state["running"] = False
@@ -550,6 +592,17 @@ async def pool_task_status():
         "running": _pool_state["running"],
         "task": _pool_state.get("task", ""),
         "stop_requested": _pool_state.get("stop_requested", False),
+    }
+
+
+@app.get("/api/pool/reg-stats")
+async def pool_reg_stats():
+    return {
+        "mode": _shared_reg_state.get("mode", ""),
+        "running": _shared_reg_state.get("running", False),
+        "success": _shared_reg_state.get("success", 0),
+        "fail": _shared_reg_state.get("fail", 0),
+        "total": _shared_reg_state.get("total", 0),
     }
 
 
@@ -840,25 +893,29 @@ def _run_daemon_once():
     _pool_daemon["running_now"] = True
     _pool_daemon["last_run_ts"] = time.time()
     _pool_daemon["stop_requested"] = False
+    _set_shared_reg_state()
     log_cb = _make_pool_log_cb()
+    reg_result: Optional[dict] = None
     try:
         cfg = _normalize_pool_runtime_config(_pool_daemon["config"])
         proxy = reg._proxy_pool.get_best(cfg["proxy"])
         stop_event = threading.Event()
         _pool_daemon["stop_event"] = stop_event
-        reg.run_pool_maintain_cycle(
+        reg_result = reg.run_pool_maintain_cycle(
             base_url=cfg["base_url"],
             token=cfg["token"],
             target_type=cfg["target_type"],
             target_count=cfg["target_count"],
             stop_event=stop_event,
             log_cb=log_cb,
+            progress_cb=_make_shared_reg_progress_cb("daemon"),
             config=reg.load_config(),
             proxy=proxy,
         )
     except Exception as e:
         log_cb(f"[Daemon] 执行异常: {e}")
     finally:
+        _finish_shared_reg_state("daemon", reg_result)
         _pool_daemon["running_now"] = False
         _pool_daemon["stop_event"] = None
         _pool_daemon["stop_requested"] = False
@@ -933,23 +990,27 @@ async def pool_daemon_run_once(body: dict = Body(default={})):
         _pool_daemon["running_now"] = True
         _pool_daemon["last_run_ts"] = time.time()
         _pool_daemon["stop_requested"] = False
+        _set_shared_reg_state()
+        reg_result: Optional[dict] = None
         try:
             proxy = reg._proxy_pool.get_best(cfg["proxy"])
             stop_event = threading.Event()
             _pool_daemon["stop_event"] = stop_event
-            reg.run_pool_maintain_cycle(
+            reg_result = reg.run_pool_maintain_cycle(
                 base_url=cfg["base_url"],
                 token=cfg["token"],
                 target_type=cfg["target_type"],
                 target_count=cfg["target_count"],
                 stop_event=stop_event,
                 log_cb=log_cb,
+                progress_cb=_make_shared_reg_progress_cb("daemon"),
                 config=reg.load_config(),
                 proxy=proxy,
             )
         except Exception as e:
             log_cb(f"[Daemon] 执行异常: {e}")
         finally:
+            _finish_shared_reg_state("daemon", reg_result)
             _pool_daemon["running_now"] = False
             _pool_daemon["stop_event"] = None
             _pool_daemon["stop_requested"] = False

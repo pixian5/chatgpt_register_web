@@ -38,7 +38,7 @@ DEFAULT_TOTAL_ACCOUNTS = 3
 DEFAULT_WORKERS = 1
 DEFAULT_PROXY_TEST_WORKERS = 20
 DEFAULT_POOL_TARGET_TYPE = "codex"
-DEFAULT_POOL_TARGET_COUNT = 100
+DEFAULT_POOL_TARGET_COUNT = 666
 DEFAULT_POOL_PROBE_WORKERS = 20
 DEFAULT_POOL_DELETE_WORKERS = 10
 DEFAULT_POOL_INTERVAL_MIN = 30
@@ -1326,6 +1326,7 @@ def run_pool_maintain_cycle(
     target_count: int,
     stop_event: threading.Event,
     log_cb: Callable[[str], None],
+    progress_cb: Optional[Callable[[int, int, int], None]] = None,
     config: Optional[dict] = None,
     proxy: str = "",
 ) -> dict:
@@ -1346,7 +1347,7 @@ def run_pool_maintain_cycle(
     status = get_pool_status(base_url, token, target_type, proxy)
     if not status.get("ok"):
         log(f"[Daemon] 获取池状态失败: {status.get('error')}")
-        return {"ok": False, "error": status.get("error")}
+        return {"ok": False, "error": status.get("error"), "success": 0, "fail": 0, "total": 0}
 
     log(f"[Daemon] 当前 {target_type} 账号数: {status['target']}")
 
@@ -1354,14 +1355,14 @@ def run_pool_maintain_cycle(
     clean_result = run_pool_clean(base_url, token, target_type, proxy, log_cb=log_cb, config=config)
     if not clean_result.get("ok"):
         log(f"[Daemon] 清理失败，跳过补号: {clean_result.get('error')}")
-        return {"ok": False, "error": clean_result.get("error")}
+        return {"ok": False, "error": clean_result.get("error"), "success": 0, "fail": 0, "total": 0}
 
     deleted = clean_result.get("deleted", 0)
     log(f"[Daemon] 清理完成: 删除 {deleted} 个失效账号")
 
     if stop_event and stop_event.is_set():
         log("[Daemon] 已收到停止请求，结束本轮维护")
-        return {"ok": True, "valid_before": status["target"], "valid_after": status["target"] - deleted, "deleted": deleted, "registered": 0, "uploaded": 0, "gap": 0}
+        return {"ok": True, "valid_before": status["target"], "valid_after": status["target"] - deleted, "deleted": deleted, "registered": 0, "uploaded": 0, "gap": 0, "success": 0, "fail": 0, "total": 0}
 
     # 3. 重新获取有效数量
     status_after = get_pool_status(base_url, token, target_type, proxy)
@@ -1391,6 +1392,9 @@ def run_pool_maintain_cycle(
                     "registered": 0,
                     "uploaded": uploaded,
                     "gap": gap,
+                    "success": 0,
+                    "fail": 0,
+                    "total": 0,
                 }
             if pre_uploaded > 0:
                 status_synced = get_pool_status(base_url, token, target_type, proxy)
@@ -1413,6 +1417,9 @@ def run_pool_maintain_cycle(
                         "registered": registered,
                         "uploaded": uploaded,
                         "gap": gap,
+                        "success": 0,
+                        "fail": 0,
+                        "total": 0,
                     }
                 log(f"[Daemon] 开始注册 {gap} 个账号...")
                 cfg_workers = int((config or {}).get("workers") or DEFAULT_WORKERS)
@@ -1440,16 +1447,25 @@ def run_pool_maintain_cycle(
                     proxy=proxy,
                     stop_event=stop_event,
                     log_cb=log_cb,
-                    progress_cb=lambda s, f, t: None,
+                    progress_cb=progress_cb or (lambda s, f, t: None),
                     config=config,
                     success_cb=upload_after_success,
                 )
                 registered = reg_result.get("success", 0)
                 log(f"[Daemon] 注册完成: 成功={registered}, 失败={reg_result.get('fail', 0)}")
+                daemon_success = reg_result.get("success", 0)
+                daemon_fail = reg_result.get("fail", 0)
+                daemon_total = reg_result.get("total", gap)
             else:
                 log("[Daemon] 存量补齐，无需注册新账号")
+                daemon_success = 0
+                daemon_fail = 0
+                daemon_total = 0
     else:
         log("[Daemon] 账号数量充足，无需补号")
+        daemon_success = 0
+        daemon_fail = 0
+        daemon_total = 0
 
     log(f"[Daemon] 维护周期完成: 删除={deleted}, 注册={registered}, 上传={uploaded}")
     return {
@@ -1460,4 +1476,7 @@ def run_pool_maintain_cycle(
         "registered": registered,
         "uploaded": uploaded,
         "gap": gap,
+        "success": daemon_success,
+        "fail": daemon_fail,
+        "total": daemon_total,
     }

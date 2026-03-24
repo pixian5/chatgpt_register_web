@@ -14,7 +14,7 @@
     "base_url": "https://or.sbbz.tech:52788/",
     "token": "1",
     "target_type": "codex",
-    "target_count": 220,
+    "target_count": 666,
     "proxy": "",
     "probe_workers": 40,
     "delete_workers": 10,
