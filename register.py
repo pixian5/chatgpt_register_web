@@ -669,20 +669,14 @@ def run_pool_probe(
     local_items = _load_local_tokens(token_dir, "root") + _load_local_tokens(uploaded_dir, "uploaded")
     log(f"[Pool] 远程总账号: {remote_total}, 远程 {target_type} 账号: {len(target_files)}, 本地 {target_type} token: {len(local_items)}")
 
-    invalid_map: Dict[str, Dict[str, Any]] = {}
     probe_lock = threading.Lock()
     checked = 0
     checked_lock = threading.Lock()
     total_checks = len(target_files) + len(local_items)
     remote_invalid_count = 0
     local_invalid_count = 0
-
-    def _invalid_key(name: str, file_id: str = "", path: str = "") -> str:
-        if name:
-            return f"name:{_normalize_token_name(name)}"
-        if file_id:
-            return f"id:{file_id}"
-        return f"path:{path}"
+    remote_invalid_401: List[Dict[str, Any]] = []
+    local_invalid_401: List[Dict[str, Any]] = []
 
     def _record_invalid(
         *,
@@ -694,31 +688,23 @@ def run_pool_probe(
         status: int = 401,
     ) -> None:
         nonlocal remote_invalid_count, local_invalid_count
-        key = _invalid_key(name, file_id=file_id, path=path)
         with probe_lock:
-            item = invalid_map.setdefault(key, {
-                "name": _normalize_token_name(name) or name or file_id or os.path.basename(path),
-                "id": file_id,
-                "status": status,
-                "sources": [],
-                "local_paths": [],
-                "locations": [],
-                "has_remote": False,
-                "has_local": False,
-            })
-            if source not in item["sources"]:
-                item["sources"].append(source)
             if source == "remote":
-                item["has_remote"] = True
-                if file_id and not item.get("id"):
-                    item["id"] = file_id
+                remote_invalid_401.append({
+                    "name": _normalize_token_name(name) or name or file_id,
+                    "id": file_id,
+                    "status": status,
+                    "source": "remote",
+                })
                 remote_invalid_count += 1
             if source == "local":
-                item["has_local"] = True
-                if path and path not in item["local_paths"]:
-                    item["local_paths"].append(path)
-                if location and location not in item["locations"]:
-                    item["locations"].append(location)
+                local_invalid_401.append({
+                    "name": _normalize_token_name(name) or name or os.path.basename(path),
+                    "path": path,
+                    "location": location,
+                    "status": status,
+                    "source": "local",
+                })
                 local_invalid_count += 1
 
     def _log_progress() -> None:
@@ -810,6 +796,8 @@ def run_pool_probe(
             "target": len(target_files),
             "local_total": len(local_items),
             "invalid_401": [],
+            "remote_invalid_401": [],
+            "local_invalid_401": [],
             "invalid_count": 0,
             "remote_invalid_count": 0,
             "local_invalid_count": 0,
@@ -830,11 +818,11 @@ def run_pool_probe(
         for future in futures:
             future.result()
 
-    invalid_401 = list(invalid_map.values())
-    invalid_401.sort(key=lambda x: str(x.get("name") or ""))
+    invalid_401 = list(remote_invalid_401) + list(local_invalid_401)
+    invalid_401.sort(key=lambda x: f"{x.get('source', '')}|{x.get('name', '')}")
     log(
         f"[Pool] 双端探测完成: 远程401={remote_invalid_count}, 本地401={local_invalid_count}, "
-        f"合并失效账号={len(invalid_401)}"
+        f"总清理项={len(invalid_401)}"
     )
     return {
         "ok": True,
@@ -842,6 +830,8 @@ def run_pool_probe(
         "target": len(target_files),
         "local_total": len(local_items),
         "invalid_401": invalid_401,
+        "remote_invalid_401": remote_invalid_401,
+        "local_invalid_401": local_invalid_401,
         "invalid_count": len(invalid_401),
         "remote_invalid_count": remote_invalid_count,
         "local_invalid_count": local_invalid_count,
@@ -904,7 +894,9 @@ def _delete_invalid_accounts(
         log("[Pool] 无需清理，没有 401 账号")
         return {"deleted": 0, "delete_fail": 0, "local_deleted": 0, "local_delete_fail": 0}
 
-    log(f"[Pool] 开始双端清理 {len(invalid_401)} 个失效账号...")
+    remote_invalid_401 = [item for item in invalid_401 if item.get("source") == "remote"]
+    local_invalid_401 = [item for item in invalid_401 if item.get("source") == "local"]
+    log(f"[Pool] 开始各端清理: 远程 {len(remote_invalid_401)} 个，本地 {len(local_invalid_401)} 个...")
     base = base_url.rstrip("/")
     headers = {"Authorization": f"Bearer {token}"}
     session = _pool_session(proxy, timeout)
@@ -968,8 +960,9 @@ def _delete_invalid_accounts(
         nonlocal deleted, delete_fail, local_deleted, local_delete_fail
         name = item.get("name", "")
         file_id = item.get("id") or ""
-        has_remote = bool(item.get("has_remote"))
-        has_local = bool(item.get("has_local"))
+        source = item.get("source")
+        has_remote = source == "remote"
+        has_local = source == "local"
         display_name = name or file_id or ""
         if not display_name:
             with del_lock:
@@ -1024,19 +1017,12 @@ def _delete_invalid_accounts(
                         log(f"[Pool] 远端删除失败: {display_name} ({final_status}, {final_label}){detail_suffix}")
 
             local_candidates = []
-            for local_path in item.get("local_paths", []) or []:
-                if local_path not in local_candidates:
-                    local_candidates.append(local_path)
-            clean_name = _normalize_token_name(name or display_name)
-            if clean_name:
-                for local_path in [
-                    os.path.join(token_dir, f"{clean_name}.json"),
-                    os.path.join(uploaded_dir, f"{clean_name}.json"),
-                ]:
-                    if local_path not in local_candidates:
-                        local_candidates.append(local_path)
+            if has_local:
+                local_path = item.get("path")
+                if local_path:
+                    local_candidates.append(str(local_path))
 
-            if has_local or remote_deleted_ok:
+            if has_local:
                 for local_path in local_candidates:
                     if os.path.isfile(local_path):
                         try:
@@ -1064,7 +1050,7 @@ def _delete_invalid_accounts(
         stats_str = ", ".join([f"{k}={v}" for k, v in fail_stats.most_common(5)])
         log(f"[Pool] 远端删除失败统计(前5): {stats_str}")
     log(
-        f"[Pool] 清理完成: 远端删除成功={deleted}, 远端删除失败={delete_fail}, "
+        f"[Pool] 各端清理完成: 远端删除成功={deleted}, 远端删除失败={delete_fail}, "
         f"本地删除成功={local_deleted}, 本地删除失败={local_delete_fail}"
     )
     return {
@@ -1088,9 +1074,14 @@ def run_pool_clean_with_probe_result(
     if not isinstance(probe_result, dict):
         return {"ok": False, "error": "invalid probe_result", "invalid_401": [], "total": 0, "target": 0}
 
-    invalid_401 = probe_result.get("invalid_401", [])
-    if not isinstance(invalid_401, list):
-        return {"ok": False, "error": "invalid probe_result.invalid_401", "invalid_401": [], "total": 0, "target": 0}
+    remote_invalid_401 = probe_result.get("remote_invalid_401", [])
+    local_invalid_401 = probe_result.get("local_invalid_401", [])
+    if not isinstance(remote_invalid_401, list):
+        return {"ok": False, "error": "invalid probe_result.remote_invalid_401", "invalid_401": [], "total": 0, "target": 0}
+    if not isinstance(local_invalid_401, list):
+        return {"ok": False, "error": "invalid probe_result.local_invalid_401", "invalid_401": [], "total": 0, "target": 0}
+
+    invalid_401 = list(remote_invalid_401) + list(local_invalid_401)
 
     delete_result = _delete_invalid_accounts(
         base_url=base_url,
