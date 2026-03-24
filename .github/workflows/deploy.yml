@@ -50,26 +50,68 @@ jobs:
             APP_DIR="${SERVER_APP_DIR:-/root/c/chatgpt_register_web}"
             APP_PORT="${SERVER_APP_PORT:-52789}"
             mkdir -p "$APP_DIR"
+            EXISTING_ENV_FILE="$APP_DIR/.env"
+            read_env_value() {
+              local file="$1"
+              local key="$2"
+              if [ ! -f "$file" ]; then
+                return 0
+              fi
+              local line
+              line="$(grep -E "^${key}=" "$file" | tail -n 1 || true)"
+              printf '%s' "${line#*=}"
+            }
+            pick_env_value() {
+              local incoming="$1"
+              local existing="$2"
+              local fallback="$3"
+              if [ -n "$incoming" ]; then
+                printf '%s' "$incoming"
+              elif [ -n "$existing" ]; then
+                printf '%s' "$existing"
+              else
+                printf '%s' "$fallback"
+              fi
+            }
+            EXISTING_DUCKMAIL_API_BASE="$(read_env_value "$EXISTING_ENV_FILE" "DUCKMAIL_API_BASE")"
+            EXISTING_DUCKMAIL_DOMAIN="$(read_env_value "$EXISTING_ENV_FILE" "DUCKMAIL_DOMAIN")"
+            EXISTING_DUCKMAIL_BEARER="$(read_env_value "$EXISTING_ENV_FILE" "DUCKMAIL_BEARER")"
+            EXISTING_POOL_BASE_URL="$(read_env_value "$EXISTING_ENV_FILE" "POOL_BASE_URL")"
+            EXISTING_POOL_TOKEN="$(read_env_value "$EXISTING_ENV_FILE" "POOL_TOKEN")"
+            EXISTING_POOL_TARGET_TYPE="$(read_env_value "$EXISTING_ENV_FILE" "POOL_TARGET_TYPE")"
+            EXISTING_POOL_TARGET_COUNT="$(read_env_value "$EXISTING_ENV_FILE" "POOL_TARGET_COUNT")"
+            EXISTING_POOL_PROXY="$(read_env_value "$EXISTING_ENV_FILE" "POOL_PROXY")"
+            EXISTING_POOL_PROBE_WORKERS="$(read_env_value "$EXISTING_ENV_FILE" "POOL_PROBE_WORKERS")"
+            EXISTING_POOL_DELETE_WORKERS="$(read_env_value "$EXISTING_ENV_FILE" "POOL_DELETE_WORKERS")"
+            EXISTING_POOL_INTERVAL_MIN="$(read_env_value "$EXISTING_ENV_FILE" "POOL_INTERVAL_MIN")"
+            EXISTING_PROXY="$(read_env_value "$EXISTING_ENV_FILE" "PROXY")"
+            EXISTING_WORKERS="$(read_env_value "$EXISTING_ENV_FILE" "WORKERS")"
+            EXISTING_PROXY_TEST_WORKERS="$(read_env_value "$EXISTING_ENV_FILE" "PROXY_TEST_WORKERS")"
+            EXISTING_ENABLE_OAUTH="$(read_env_value "$EXISTING_ENV_FILE" "ENABLE_OAUTH")"
+            EXISTING_OAUTH_REQUIRED="$(read_env_value "$EXISTING_ENV_FILE" "OAUTH_REQUIRED")"
+            EXISTING_OAUTH_ISSUER="$(read_env_value "$EXISTING_ENV_FILE" "OAUTH_ISSUER")"
+            EXISTING_OAUTH_CLIENT_ID="$(read_env_value "$EXISTING_ENV_FILE" "OAUTH_CLIENT_ID")"
+            EXISTING_OAUTH_REDIRECT_URI="$(read_env_value "$EXISTING_ENV_FILE" "OAUTH_REDIRECT_URI")"
             cat > "$APP_DIR/.env" <<EOF
-            DUCKMAIL_API_BASE=${DUCKMAIL_API_BASE}
-            DUCKMAIL_DOMAIN=${DUCKMAIL_DOMAIN}
-            DUCKMAIL_BEARER=${DUCKMAIL_BEARER}
-            POOL_BASE_URL=${POOL_BASE_URL}
-            POOL_TOKEN=${POOL_TOKEN}
-            POOL_TARGET_TYPE=${POOL_TARGET_TYPE:-codex}
-            POOL_TARGET_COUNT=${POOL_TARGET_COUNT:-666}
-            POOL_PROXY=${POOL_PROXY}
-            POOL_PROBE_WORKERS=${POOL_PROBE_WORKERS:-40}
-            POOL_DELETE_WORKERS=${POOL_DELETE_WORKERS:-10}
-            POOL_INTERVAL_MIN=${POOL_INTERVAL_MIN:-30}
-            PROXY=${PROXY}
-            WORKERS=${WORKERS:-1}
-            PROXY_TEST_WORKERS=${PROXY_TEST_WORKERS:-20}
-            ENABLE_OAUTH=${ENABLE_OAUTH:-true}
-            OAUTH_REQUIRED=${OAUTH_REQUIRED:-true}
-            OAUTH_ISSUER=${OAUTH_ISSUER:-https://auth.openai.com}
-            OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-app_EMoamEEZ73f0CkXaXp7hrann}
-            OAUTH_REDIRECT_URI=${OAUTH_REDIRECT_URI:-http://localhost:1455/auth/callback}
+            DUCKMAIL_API_BASE=$(pick_env_value "${DUCKMAIL_API_BASE}" "${EXISTING_DUCKMAIL_API_BASE}" "")
+            DUCKMAIL_DOMAIN=$(pick_env_value "${DUCKMAIL_DOMAIN}" "${EXISTING_DUCKMAIL_DOMAIN}" "")
+            DUCKMAIL_BEARER=$(pick_env_value "${DUCKMAIL_BEARER}" "${EXISTING_DUCKMAIL_BEARER}" "")
+            POOL_BASE_URL=$(pick_env_value "${POOL_BASE_URL}" "${EXISTING_POOL_BASE_URL}" "")
+            POOL_TOKEN=$(pick_env_value "${POOL_TOKEN}" "${EXISTING_POOL_TOKEN}" "")
+            POOL_TARGET_TYPE=$(pick_env_value "${POOL_TARGET_TYPE}" "${EXISTING_POOL_TARGET_TYPE}" "codex")
+            POOL_TARGET_COUNT=$(pick_env_value "${POOL_TARGET_COUNT}" "${EXISTING_POOL_TARGET_COUNT}" "666")
+            POOL_PROXY=$(pick_env_value "${POOL_PROXY}" "${EXISTING_POOL_PROXY}" "")
+            POOL_PROBE_WORKERS=$(pick_env_value "${POOL_PROBE_WORKERS}" "${EXISTING_POOL_PROBE_WORKERS}" "40")
+            POOL_DELETE_WORKERS=$(pick_env_value "${POOL_DELETE_WORKERS}" "${EXISTING_POOL_DELETE_WORKERS}" "10")
+            POOL_INTERVAL_MIN=$(pick_env_value "${POOL_INTERVAL_MIN}" "${EXISTING_POOL_INTERVAL_MIN}" "30")
+            PROXY=$(pick_env_value "${PROXY}" "${EXISTING_PROXY}" "")
+            WORKERS=$(pick_env_value "${WORKERS}" "${EXISTING_WORKERS}" "1")
+            PROXY_TEST_WORKERS=$(pick_env_value "${PROXY_TEST_WORKERS}" "${EXISTING_PROXY_TEST_WORKERS}" "20")
+            ENABLE_OAUTH=$(pick_env_value "${ENABLE_OAUTH}" "${EXISTING_ENABLE_OAUTH}" "true")
+            OAUTH_REQUIRED=$(pick_env_value "${OAUTH_REQUIRED}" "${EXISTING_OAUTH_REQUIRED}" "true")
+            OAUTH_ISSUER=$(pick_env_value "${OAUTH_ISSUER}" "${EXISTING_OAUTH_ISSUER}" "https://auth.openai.com")
+            OAUTH_CLIENT_ID=$(pick_env_value "${OAUTH_CLIENT_ID}" "${EXISTING_OAUTH_CLIENT_ID}" "app_EMoamEEZ73f0CkXaXp7hrann")
+            OAUTH_REDIRECT_URI=$(pick_env_value "${OAUTH_REDIRECT_URI}" "${EXISTING_OAUTH_REDIRECT_URI}" "http://localhost:1455/auth/callback")
             EOF
             chmod 600 "$APP_DIR/.env"
             REPO_URL="${SERVER_REPO_URL}"
