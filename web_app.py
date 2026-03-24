@@ -535,13 +535,25 @@ async def pool_status_api(body: dict = Body(...)):
     base_url = body.get("base_url", "").strip()
     token = body.get("token", "").strip()
     target_type = body.get("target_type", reg.DEFAULT_POOL_TARGET_TYPE)
+    target_count = _to_int(body.get("target_count", reg.DEFAULT_POOL_TARGET_COUNT), reg.DEFAULT_POOL_TARGET_COUNT, minimum=0)
     proxy = body.get("proxy", "").strip()
 
     if not base_url or not token:
         raise HTTPException(status_code=400, detail="base_url 和 token 不能为空")
 
+    cfg = reg.load_config()
+    log_cb = _make_pool_log_cb()
     result = await asyncio.get_event_loop().run_in_executor(
-        None, lambda: reg.get_pool_status(base_url, token, target_type, proxy)
+        None,
+        lambda: reg.run_pool_refresh_status(
+            base_url=base_url,
+            token=token,
+            target_type=target_type,
+            target_count=target_count,
+            proxy=proxy,
+            log_cb=log_cb,
+            config=cfg,
+        ),
     )
     return result
 
@@ -630,7 +642,7 @@ async def pool_stop():
 
 @app.post("/api/pool/inspect")
 async def pool_inspect(body: dict = Body(...)):
-    """同步探测账号池，返回检查结果（供前端渲染确认卡）"""
+    """执行一轮完整校验与401清理，返回最新状态（供前端渲染确认卡）"""
     base_url = body.get("base_url", "").strip()
     token = body.get("token", "").strip()
     target_type = body.get("target_type", reg.DEFAULT_POOL_TARGET_TYPE)
@@ -641,30 +653,25 @@ async def pool_inspect(body: dict = Body(...)):
         raise HTTPException(status_code=400, detail="base_url 和 token 不能为空")
 
     log_cb = _make_pool_log_cb()
-    log_cb("[Pool] 开始检查失效账号...")
     loop = asyncio.get_event_loop()
     cfg = reg.load_config()
     result = await loop.run_in_executor(
         None,
-        lambda: reg.run_pool_probe(base_url, token, target_type, proxy, log_cb=log_cb, config=cfg),
+        lambda: reg.run_pool_refresh_status(
+            base_url=base_url,
+            token=token,
+            target_type=target_type,
+            target_count=target_count,
+            proxy=proxy,
+            log_cb=log_cb,
+            config=cfg,
+        ),
     )
 
     if not result.get("ok"):
-        raise HTTPException(status_code=500, detail=result.get("error", "探测失败"))
+        raise HTTPException(status_code=500, detail=result.get("error", "校验失败"))
 
-    log_cb(f"[Pool] 检查结束: 总={result.get('total')}, 目标={result.get('target')}, 401={result.get('invalid_count')}")
-    probe_ts = int(time.time())
-    probe_signature = _build_probe_signature(base_url, token, target_type, proxy)
-    valid = result["target"] - result["invalid_count"]
-    gap = max(0, target_count - valid)
-    return {
-        **result,
-        "valid_count": valid,
-        "gap": gap,
-        "target_count": target_count,
-        "probe_ts": probe_ts,
-        "probe_signature": probe_signature,
-    }
+    return result
 
 
 # ============================================================

@@ -932,6 +932,87 @@ def run_pool_clean_with_probe_result(
     return {**probe_result, **delete_result, "ok": True}
 
 
+def run_pool_refresh_status(
+    base_url: str,
+    token: str,
+    target_type: str = DEFAULT_POOL_TARGET_TYPE,
+    target_count: int = 0,
+    proxy: str = "",
+    timeout: int = 10,
+    log_cb: Optional[Callable[[str], None]] = None,
+    config: Optional[dict] = None,
+) -> dict:
+    """完整执行一轮账号状态校验、401 清理，并返回最新状态。"""
+
+    def log(msg):
+        if log_cb:
+            log_cb(msg)
+
+    log("[Pool] 开始校验全部账号状态...")
+    probe_result = run_pool_probe(
+        base_url=base_url,
+        token=token,
+        target_type=target_type,
+        proxy=proxy,
+        timeout=timeout,
+        log_cb=log_cb,
+        config=config,
+    )
+    if not probe_result.get("ok"):
+        return probe_result
+
+    clean_result = run_pool_clean_with_probe_result(
+        base_url=base_url,
+        token=token,
+        probe_result=probe_result,
+        proxy=proxy,
+        timeout=timeout,
+        log_cb=log_cb,
+        config=config,
+    )
+    if not clean_result.get("ok"):
+        return clean_result
+
+    status_after = get_pool_status(
+        base_url=base_url,
+        token=token,
+        target_type=target_type,
+        proxy=proxy,
+        timeout=timeout,
+    )
+    if status_after.get("ok"):
+        total_after = status_after.get("total", 0)
+        valid_count = status_after.get("target", 0)
+    else:
+        total_after = max(0, int(probe_result.get("total", 0)) - int(clean_result.get("deleted", 0)))
+        valid_count = max(0, int(probe_result.get("target", 0)) - int(clean_result.get("deleted", 0)))
+
+    gap = max(0, int(target_count or 0) - int(valid_count)) if int(target_count or 0) > 0 else 0
+    invalid_count = int(probe_result.get("invalid_count", 0))
+    deleted = int(clean_result.get("deleted", 0))
+    delete_fail = int(clean_result.get("delete_fail", 0))
+
+    log(
+        f"[Pool] 校验完成: 删除401={deleted}, 远端删除失败={delete_fail}, "
+        f"最新有效={valid_count}, 总账号={total_after}, 缺口={gap}"
+    )
+
+    return {
+        "ok": True,
+        "total": total_after,
+        "target": valid_count,
+        "target_type": target_type,
+        "valid_count": valid_count,
+        "target_count": int(target_count or 0),
+        "gap": gap,
+        "invalid_count": invalid_count,
+        "deleted": deleted,
+        "delete_fail": delete_fail,
+        "probe_total": probe_result.get("total", 0),
+        "probe_target": probe_result.get("target", 0),
+    }
+
+
 def _upload_tokens_to_pool(
     base_url: str,
     pool_token: str,
@@ -1343,33 +1424,30 @@ def run_pool_maintain_cycle(
 
     log(f"[Daemon] 开始维护周期: 目标类型={target_type}, 目标数量={target_count}")
 
-    # 1. 获取当前状态
-    status = get_pool_status(base_url, token, target_type, proxy)
-    if not status.get("ok"):
-        log(f"[Daemon] 获取池状态失败: {status.get('error')}")
-        return {"ok": False, "error": status.get("error"), "success": 0, "fail": 0, "total": 0}
+    # 1. 校验全部账号状态并清理401
+    refresh_result = run_pool_refresh_status(
+        base_url=base_url,
+        token=token,
+        target_type=target_type,
+        target_count=target_count,
+        proxy=proxy,
+        log_cb=log_cb,
+        config=config,
+    )
+    if not refresh_result.get("ok"):
+        log(f"[Daemon] 校验失败，跳过补号: {refresh_result.get('error')}")
+        return {"ok": False, "error": refresh_result.get("error"), "success": 0, "fail": 0, "total": 0}
 
-    log(f"[Daemon] 当前 {target_type} 账号数: {status['target']}")
-
-    # 2. 清理 401 账号
-    clean_result = run_pool_clean(base_url, token, target_type, proxy, log_cb=log_cb, config=config)
-    if not clean_result.get("ok"):
-        log(f"[Daemon] 清理失败，跳过补号: {clean_result.get('error')}")
-        return {"ok": False, "error": clean_result.get("error"), "success": 0, "fail": 0, "total": 0}
-
-    deleted = clean_result.get("deleted", 0)
-    log(f"[Daemon] 清理完成: 删除 {deleted} 个失效账号")
+    status = {"target": int(refresh_result.get("probe_target", 0))}
+    deleted = int(refresh_result.get("deleted", 0))
+    valid_count = int(refresh_result.get("valid_count", refresh_result.get("target", 0)))
+    gap = int(refresh_result.get("gap", max(0, target_count - valid_count)))
 
     if stop_event and stop_event.is_set():
         log("[Daemon] 已收到停止请求，结束本轮维护")
-        return {"ok": True, "valid_before": status["target"], "valid_after": status["target"] - deleted, "deleted": deleted, "registered": 0, "uploaded": 0, "gap": 0, "success": 0, "fail": 0, "total": 0}
+        return {"ok": True, "valid_before": status["target"], "valid_after": valid_count, "deleted": deleted, "registered": 0, "uploaded": 0, "gap": 0, "success": 0, "fail": 0, "total": 0}
 
-    # 3. 重新获取有效数量
-    status_after = get_pool_status(base_url, token, target_type, proxy)
-    valid_count = status_after.get("target", 0) if status_after.get("ok") else (status["target"] - deleted)
-    gap = target_count - valid_count
-
-    log(f"[Daemon] 清理后有效账号: {valid_count}, 目标: {target_count}, 缺口: {gap}")
+    log(f"[Daemon] 校验后有效账号: {valid_count}, 目标: {target_count}, 缺口: {gap}")
 
     # 4. 若有缺口则先同步本地存量，再注册补充
     registered = 0

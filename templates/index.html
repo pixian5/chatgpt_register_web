@@ -2090,7 +2090,7 @@ function resetRegOnly() {
 async function refreshPoolStatus() {
   const btn = document.getElementById('btn-refresh-pool');
   btn.disabled = true;
-  btn.textContent = '↻ 刷新中...';
+  btn.textContent = '↻ 校验中...';
 
   const { base_url, token, target_type, target_count, proxy } = getPoolConfig();
   if (!base_url || !token) {
@@ -2104,7 +2104,7 @@ async function refreshPoolStatus() {
     const r = await fetch('/api/pool/status', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({base_url, token, target_type, proxy}),
+      body: JSON.stringify({base_url, token, target_type, target_count, proxy}),
     });
     const d = await r.json();
     if (d.ok) {
@@ -2116,7 +2116,7 @@ async function refreshPoolStatus() {
       document.getElementById('pool-pct').textContent = `${pct}%`;
       document.getElementById('pool-progress-bar').style.width = pct + '%';
       document.getElementById('pool-total').textContent = d.total;
-      // 失效数量仅在 inspect 后才知道
+      document.getElementById('pool-invalid-disp').textContent = d.invalid_count ?? 0;
     } else {
       appendLog('[Pool] 获取状态失败: ' + (d.error || '未知错误'));
     }
@@ -2175,8 +2175,6 @@ async function startInspect(options = {}) {
     const { invalid_count, valid_count, gap } = _inspectResult;
 
     await refreshPoolStatus();
-    // 更新失效数显示
-    document.getElementById('pool-invalid-disp').textContent = invalid_count;
 
     // 填充结果卡
     document.getElementById('res-invalid').textContent = invalid_count;
@@ -2199,7 +2197,7 @@ async function startInspect(options = {}) {
       }
     }
 
-    appendLog(`[Pool] 检查完成: 失效=${invalid_count}, 有效=${valid_count}, 缺口=${gap}`);
+    appendLog(`[Pool] 校验并清理完成: 失效=${invalid_count}, 有效=${valid_count}, 缺口=${gap}`);
   } catch (e) {
     appendLog('[ERROR] 检查请求异常: ' + e);
     _showInspectPanel('idle');
@@ -2217,45 +2215,11 @@ async function confirmFill() {
   const { base_url, token, target_type, target_count, proxy } = getPoolConfig();
 
   _showInspectPanel('running');
-
-  // 步骤1: 清理 401
-  document.getElementById('running-msg').textContent = '步骤 1/2  清理失效账号...';
-  appendLog('[Pool] 开始清理 401 失效账号...');
+  document.getElementById('running-msg').textContent = `步骤 2/2  补号中 (${gap} 个)...`;
+  _startSharedRegSuccess('manual_fill');
+  appendLog(`[Pool] 开始补号: ${gap} 个账号...`);
 
   try {
-    const cleanR = await fetch('/api/pool/clean', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        base_url,
-        token,
-        target_type,
-        proxy,
-        probe_result: _inspectResult,
-        probe_signature: _inspectResult.probe_signature,
-        probe_ts: _inspectResult.probe_ts,
-      }),
-    });
-    if (!cleanR.ok) {
-      const e = await cleanR.json();
-      appendLog('[ERROR] 清理请求失败: ' + (e.detail || ''));
-      resetInspect();
-      return;
-    }
-
-    // 等待 clean 任务结束
-    await _waitTaskIdle();
-    if (_poolStopRequested) {
-      appendLog('[Pool] 已停止补号，清理完成后不再继续注册');
-      resetInspect();
-      return;
-    }
-
-    // 步骤2: 补号
-    document.getElementById('running-msg').textContent = `步骤 2/2  补号中 (${gap} 个)...`;
-    _startSharedRegSuccess('manual_fill');
-    appendLog(`[Pool] 开始补号: ${gap} 个账号...`);
-
     const fillR = await fetch('/api/pool/fill', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
