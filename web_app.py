@@ -402,7 +402,11 @@ async def pool_probe(body: dict = Body(...)):
         try:
             cfg = reg.load_config()
             result = reg.run_pool_probe(base_url, token, target_type, proxy, log_cb=log_cb, config=cfg)
-            log_cb(f"[Pool] 探测结果: 总={result.get('total')}, 目标={result.get('target')}, 401={result.get('invalid_count')}")
+            log_cb(
+                f"[Pool] 探测结果: 远程总={result.get('total')}, 远程目标={result.get('target')}, "
+                f"本地目标={result.get('local_total', 0)}, 远程401={result.get('remote_invalid_count', 0)}, "
+                f"本地401={result.get('local_invalid_count', 0)}, 合并401={result.get('invalid_count')}"
+            )
         except Exception as e:
             log_cb(f"[ERROR] 探测异常: {e}")
         finally:
@@ -462,7 +466,10 @@ async def pool_clean(body: dict = Body(...)):
                 if isinstance(probe_result, dict):
                     log_cb("[Pool] 检查结果不可用或已过期，回退为重新探测后清理")
                 result = reg.run_pool_clean(base_url, token, target_type, proxy, log_cb=log_cb, config=cfg)
-            log_cb(f"[Pool] 清理完成: 删除={result.get('deleted')}, 失败={result.get('delete_fail')}")
+            log_cb(
+                f"[Pool] 清理完成: 远端删除={result.get('deleted')}, 本地删除={result.get('local_deleted', 0)}, "
+                f"远端失败={result.get('delete_fail')}, 本地失败={result.get('local_delete_fail', 0)}"
+            )
         except Exception as e:
             log_cb(f"[ERROR] 清理异常: {e}")
         finally:

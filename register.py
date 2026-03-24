@@ -591,32 +591,23 @@ def run_pool_probe(
     url = f"{base_url.rstrip('/')}/v0/management/auth-files"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     session = _pool_session(proxy, timeout)
-
-    log("[Pool] 获取账号列表...")
-    try:
-        resp = session.get(url, headers=headers, timeout=timeout)
-        resp.raise_for_status()
-        raw = resp.json()
-        files = raw.get("files", []) if isinstance(raw, dict) else []
-    except Exception as e:
-        log(f"[Pool] 获取失败: {e}")
-        return {"ok": False, "error": str(e), "invalid_401": [], "total": 0, "target": 0}
-
-    total = len(files)
-    target_files = [f for f in files if (f.get("type") or f.get("typo") or "").lower() == target_type.lower()]
-    log(f"[Pool] 总账号: {total}, {target_type} 账号: {len(target_files)}")
-
-    invalid_401 = []
-    probe_lock = threading.Lock()
-    checked = 0
-    checked_lock = threading.Lock()
+    cfg = config or load_config()
+    token_dir = _resolve_token_dir(cfg)
+    uploaded_dir = os.path.join(token_dir, "uploaded")
 
     def extract_chatgpt_account_id(item: dict) -> str:
-        id_token = item.get("id_token")
-        if not isinstance(id_token, dict):
+        if not isinstance(item, dict):
             return ""
-        v = id_token.get("chatgpt_account_id")
-        return str(v) if v else ""
+        id_token = item.get("id_token")
+        if isinstance(id_token, dict):
+            v = id_token.get("chatgpt_account_id")
+            if v:
+                return str(v)
+        for key in ("account_id", "chatgpt_account_id"):
+            value = item.get(key)
+            if value:
+                return str(value)
+        return ""
 
     def build_probe_payload(auth_index: str, chatgpt_account_id: str) -> dict:
         call_header = {
@@ -633,18 +624,122 @@ def run_pool_probe(
             "header": call_header,
         }
 
-    def probe_one(f):
+    def _load_local_tokens(dir_path: str, location: str) -> List[dict]:
+        items: List[dict] = []
+        if not os.path.isdir(dir_path):
+            return items
+        for fname in os.listdir(dir_path):
+            if not fname.endswith(".json"):
+                continue
+            path = os.path.join(dir_path, fname)
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as e:
+                log(f"[Pool] 跳过本地文件(读取失败): {path} - {e}")
+                continue
+            if not isinstance(data, dict):
+                log(f"[Pool] 跳过本地文件(格式无效): {path}")
+                continue
+            item_type = str(data.get("type") or data.get("typo") or "").lower()
+            if item_type != target_type.lower():
+                continue
+            items.append({
+                "name": _normalize_token_name(fname),
+                "path": path,
+                "location": location,
+                "data": data,
+            })
+        return items
+
+    log("[Pool] 获取远程账号列表...")
+    try:
+        resp = session.get(url, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        raw = resp.json()
+        files = raw.get("files", []) if isinstance(raw, dict) else []
+    except Exception as e:
+        log(f"[Pool] 获取远程账号失败: {e}")
+        return {"ok": False, "error": str(e), "invalid_401": [], "total": 0, "target": 0}
+
+    remote_total = len(files)
+    target_files = [f for f in files if (f.get("type") or f.get("typo") or "").lower() == target_type.lower()]
+    local_items = _load_local_tokens(token_dir, "root") + _load_local_tokens(uploaded_dir, "uploaded")
+    log(f"[Pool] 远程总账号: {remote_total}, 远程 {target_type} 账号: {len(target_files)}, 本地 {target_type} token: {len(local_items)}")
+
+    invalid_map: Dict[str, Dict[str, Any]] = {}
+    probe_lock = threading.Lock()
+    checked = 0
+    checked_lock = threading.Lock()
+    total_checks = len(target_files) + len(local_items)
+    remote_invalid_count = 0
+    local_invalid_count = 0
+
+    def _invalid_key(name: str, file_id: str = "", path: str = "") -> str:
+        if name:
+            return f"name:{_normalize_token_name(name)}"
+        if file_id:
+            return f"id:{file_id}"
+        return f"path:{path}"
+
+    def _record_invalid(
+        *,
+        name: str,
+        source: str,
+        file_id: str = "",
+        path: str = "",
+        location: str = "",
+        status: int = 401,
+    ) -> None:
+        nonlocal remote_invalid_count, local_invalid_count
+        key = _invalid_key(name, file_id=file_id, path=path)
+        with probe_lock:
+            item = invalid_map.setdefault(key, {
+                "name": _normalize_token_name(name) or name or file_id or os.path.basename(path),
+                "id": file_id,
+                "status": status,
+                "sources": [],
+                "local_paths": [],
+                "locations": [],
+                "has_remote": False,
+                "has_local": False,
+            })
+            if source not in item["sources"]:
+                item["sources"].append(source)
+            if source == "remote":
+                item["has_remote"] = True
+                if file_id and not item.get("id"):
+                    item["id"] = file_id
+                remote_invalid_count += 1
+            if source == "local":
+                item["has_local"] = True
+                if path and path not in item["local_paths"]:
+                    item["local_paths"].append(path)
+                if location and location not in item["locations"]:
+                    item["locations"].append(location)
+                local_invalid_count += 1
+
+    def _log_progress() -> None:
+        with checked_lock:
+            if checked == 1 or checked % 20 == 0 or checked == total_checks:
+                log(
+                    f"[Pool] 探测进度: {checked}/{total_checks}, "
+                    f"远程401={remote_invalid_count}, 本地401={local_invalid_count}"
+                )
+
+    def probe_remote_one(f):
         nonlocal checked
         name = f.get("name") or ""
         file_id = f.get("id") or ""
         display_name = name or file_id or ""
         auth_index = f.get("auth_index")
         if not auth_index:
-            log(f"[Pool] 跳过(缺少 auth_index): {display_name}")
+            log(f"[Pool] 跳过远程账号(缺少 auth_index): {display_name}")
             with checked_lock:
                 checked += 1
-                if checked == 1 or checked % 20 == 0 or checked == len(target_files):
-                    log(f"[Pool] 探测进度: {checked}/{len(target_files)}, 401={len(invalid_401)}")
+            _log_progress()
             return
         try:
             payload = build_probe_payload(str(auth_index), extract_chatgpt_account_id(f))
@@ -658,34 +753,98 @@ def run_pool_probe(
             data = r.json() if r.content else {}
             status_code = data.get("status_code") if isinstance(data, dict) else None
             if status_code == 401:
-                with probe_lock:
-                    invalid_401.append({"name": name, "id": file_id, "status": 401})
-                log(f"[Pool] 401: {display_name}")
+                _record_invalid(name=name, file_id=file_id, source="remote", status=401)
+                log(f"[Pool] 远程401: {display_name}")
             elif status_code is None:
-                log(f"[Pool] 探测返回缺少 status_code: {display_name}")
+                log(f"[Pool] 远程探测返回缺少 status_code: {display_name}")
         except Exception as e:
-            log(f"[Pool] 探测异常: {display_name} - {e}")
+            log(f"[Pool] 远程探测异常: {display_name} - {e}")
         finally:
             with checked_lock:
                 checked += 1
-                if checked == 1 or checked % 20 == 0 or checked == len(target_files):
-                    log(f"[Pool] 探测进度: {checked}/{len(target_files)}, 401={len(invalid_401)}")
+            _log_progress()
+
+    def probe_local_one(item: dict):
+        nonlocal checked
+        name = item.get("name") or ""
+        path = item.get("path") or ""
+        location = item.get("location") or ""
+        data = item.get("data") or {}
+        display_name = name or os.path.basename(path)
+        access_token = str(data.get("access_token") or "").strip()
+        if not access_token:
+            log(f"[Pool] 跳过本地账号(缺少 access_token): {display_name}")
+            with checked_lock:
+                checked += 1
+            _log_progress()
+            return
+        local_headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "User-Agent": "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal",
+        }
+        chatgpt_account_id = extract_chatgpt_account_id(data)
+        if chatgpt_account_id:
+            local_headers["Chatgpt-Account-Id"] = chatgpt_account_id
+        try:
+            r = session.get(
+                "https://chatgpt.com/backend-api/wham/usage",
+                headers=local_headers,
+                timeout=timeout,
+            )
+            if r.status_code == 401:
+                _record_invalid(name=name, path=path, location=location, source="local", status=401)
+                log(f"[Pool] 本地401: {display_name} ({location})")
+        except Exception as e:
+            log(f"[Pool] 本地探测异常: {display_name} - {e}")
+        finally:
+            with checked_lock:
+                checked += 1
+            _log_progress()
+
+    if total_checks == 0:
+        log("[Pool] 无可探测账号")
+        return {
+            "ok": True,
+            "total": remote_total,
+            "target": len(target_files),
+            "local_total": len(local_items),
+            "invalid_401": [],
+            "invalid_count": 0,
+            "remote_invalid_count": 0,
+            "local_invalid_count": 0,
+        }
 
     if max_workers is None:
-        cfg = config or load_config()
         max_workers = int((cfg.get("pool") or {}).get("probe_workers", DEFAULT_POOL_PROBE_WORKERS))
-    max_workers = max(1, min(int(max_workers), max(1, len(target_files))))
+    max_workers = max(1, min(int(max_workers), max(1, total_checks)))
 
+    probe_tasks = [("remote", item) for item in target_files] + [("local", item) for item in local_items]
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-        list(ex.map(probe_one, target_files))
+        futures = []
+        for source, item in probe_tasks:
+            if source == "remote":
+                futures.append(ex.submit(probe_remote_one, item))
+            else:
+                futures.append(ex.submit(probe_local_one, item))
+        for future in futures:
+            future.result()
 
-    log(f"[Pool] 探测完成: 401 失效 {len(invalid_401)} 个")
+    invalid_401 = list(invalid_map.values())
+    invalid_401.sort(key=lambda x: str(x.get("name") or ""))
+    log(
+        f"[Pool] 双端探测完成: 远程401={remote_invalid_count}, 本地401={local_invalid_count}, "
+        f"合并失效账号={len(invalid_401)}"
+    )
     return {
         "ok": True,
-        "total": total,
+        "total": remote_total,
         "target": len(target_files),
+        "local_total": len(local_items),
         "invalid_401": invalid_401,
         "invalid_count": len(invalid_401),
+        "remote_invalid_count": remote_invalid_count,
+        "local_invalid_count": local_invalid_count,
     }
 
 
@@ -743,14 +902,16 @@ def _delete_invalid_accounts(
 
     if not invalid_401:
         log("[Pool] 无需清理，没有 401 账号")
-        return {"deleted": 0, "delete_fail": 0}
+        return {"deleted": 0, "delete_fail": 0, "local_deleted": 0, "local_delete_fail": 0}
 
-    log(f"[Pool] 开始远端删除 {len(invalid_401)} 个失效账号，并同步清理本地副本...")
+    log(f"[Pool] 开始双端清理 {len(invalid_401)} 个失效账号...")
     base = base_url.rstrip("/")
     headers = {"Authorization": f"Bearer {token}"}
     session = _pool_session(proxy, timeout)
     deleted = 0
     delete_fail = 0
+    local_deleted = 0
+    local_delete_fail = 0
     del_lock = threading.Lock()
     fail_stats = Counter()
     token_dir = _resolve_token_dir(config or load_config())
@@ -804,79 +965,89 @@ def _delete_invalid_accounts(
         return attempts
 
     def delete_one(item):
-        nonlocal deleted, delete_fail
+        nonlocal deleted, delete_fail, local_deleted, local_delete_fail
         name = item.get("name", "")
         file_id = item.get("id") or ""
+        has_remote = bool(item.get("has_remote"))
+        has_local = bool(item.get("has_local"))
         display_name = name or file_id or ""
         if not display_name:
             with del_lock:
                 delete_fail += 1
             log("[Pool] 远端删除失败: 空文件名")
             return
+        remote_deleted_ok = False
         try:
-            attempts = _build_attempts(file_id, name)
-            if not attempts:
-                with del_lock:
-                    delete_fail += 1
-                    fail_stats["EMPTY:attempts"] += 1
-                log(f"[Pool] 远端删除失败: {display_name} (无可用删除方式)")
-                return
-
-            last_status: Optional[int] = None
-            last_label = ""
-            best_status: Optional[int] = None
-            best_label = ""
-            best_detail = ""
-
-            for label, url, params, json_body in attempts:
-                r = session.delete(url, headers=headers, timeout=timeout, params=params, json=json_body)
-                last_status = r.status_code
-                last_label = label
-                if r.status_code in (200, 204):
+            if has_remote:
+                attempts = _build_attempts(file_id, name)
+                if not attempts:
                     with del_lock:
-                        deleted += 1
-                    log(f"[Pool] 远端删除成功: {display_name} ({label})")
-                    # 同步删除本地副本（根目录和 uploaded/）
-                    clean_name = _normalize_token_name(name or display_name)
-                    if clean_name:
-                        local_deleted_paths = []
-                        local_missing_paths = []
-                        for local_path in [
-                            os.path.join(token_dir, f"{clean_name}.json"),
-                            os.path.join(uploaded_dir, f"{clean_name}.json"),
-                        ]:
-                            if os.path.isfile(local_path):
-                                try:
-                                    os.remove(local_path)
-                                    local_deleted_paths.append(local_path)
-                                except Exception as ex:
-                                    log(f"[Pool] 本地删除失败: {local_path} - {ex}")
-                            else:
-                                local_missing_paths.append(local_path)
-                                log(f"[Pool] 本地不存在: {local_path}")
-                        if not local_missing_paths:
-                            for local_path in local_deleted_paths:
-                                log(f"[Pool] 本地删除成功: {local_path}")
-                    return
+                        delete_fail += 1
+                        fail_stats["EMPTY:attempts"] += 1
+                    log(f"[Pool] 远端删除失败: {display_name} (无可用删除方式)")
+                else:
+                    last_status: Optional[int] = None
+                    last_label = ""
+                    best_status: Optional[int] = None
+                    best_label = ""
+                    best_detail = ""
 
-                detail = _resp_detail(r)
-                if best_status is None:
-                    best_status = r.status_code
-                    best_label = label
-                    best_detail = detail
-                elif best_status in (404, 405) and r.status_code not in (404, 405):
-                    best_status = r.status_code
-                    best_label = label
-                    best_detail = detail
+                    for label, url, params, json_body in attempts:
+                        r = session.delete(url, headers=headers, timeout=timeout, params=params, json=json_body)
+                        last_status = r.status_code
+                        last_label = label
+                        if r.status_code in (200, 204):
+                            with del_lock:
+                                deleted += 1
+                            remote_deleted_ok = True
+                            log(f"[Pool] 远端删除成功: {display_name} ({label})")
+                            break
 
-            final_status = best_status if best_status is not None else last_status
-            final_label = best_label or last_label
-            final_detail = best_detail
-            with del_lock:
-                delete_fail += 1
-                fail_stats[f"{final_status}:{final_label}"] += 1
-            detail_suffix = f" {final_detail}" if final_detail else ""
-            log(f"[Pool] 远端删除失败: {display_name} ({final_status}, {final_label}){detail_suffix}")
+                        detail = _resp_detail(r)
+                        if best_status is None:
+                            best_status = r.status_code
+                            best_label = label
+                            best_detail = detail
+                        elif best_status in (404, 405) and r.status_code not in (404, 405):
+                            best_status = r.status_code
+                            best_label = label
+                            best_detail = detail
+
+                    if not remote_deleted_ok:
+                        final_status = best_status if best_status is not None else last_status
+                        final_label = best_label or last_label
+                        final_detail = best_detail
+                        with del_lock:
+                            delete_fail += 1
+                            fail_stats[f"{final_status}:{final_label}"] += 1
+                        detail_suffix = f" {final_detail}" if final_detail else ""
+                        log(f"[Pool] 远端删除失败: {display_name} ({final_status}, {final_label}){detail_suffix}")
+
+            local_candidates = []
+            for local_path in item.get("local_paths", []) or []:
+                if local_path not in local_candidates:
+                    local_candidates.append(local_path)
+            clean_name = _normalize_token_name(name or display_name)
+            if clean_name:
+                for local_path in [
+                    os.path.join(token_dir, f"{clean_name}.json"),
+                    os.path.join(uploaded_dir, f"{clean_name}.json"),
+                ]:
+                    if local_path not in local_candidates:
+                        local_candidates.append(local_path)
+
+            if has_local or remote_deleted_ok:
+                for local_path in local_candidates:
+                    if os.path.isfile(local_path):
+                        try:
+                            os.remove(local_path)
+                            with del_lock:
+                                local_deleted += 1
+                            log(f"[Pool] 本地删除成功: {local_path}")
+                        except Exception as ex:
+                            with del_lock:
+                                local_delete_fail += 1
+                            log(f"[Pool] 本地删除失败: {local_path} - {ex}")
         except Exception as e:
             with del_lock:
                 delete_fail += 1
@@ -892,8 +1063,16 @@ def _delete_invalid_accounts(
     if fail_stats:
         stats_str = ", ".join([f"{k}={v}" for k, v in fail_stats.most_common(5)])
         log(f"[Pool] 远端删除失败统计(前5): {stats_str}")
-    log(f"[Pool] 清理完成: 远端删除成功={deleted}, 远端删除失败={delete_fail}")
-    return {"deleted": deleted, "delete_fail": delete_fail}
+    log(
+        f"[Pool] 清理完成: 远端删除成功={deleted}, 远端删除失败={delete_fail}, "
+        f"本地删除成功={local_deleted}, 本地删除失败={local_delete_fail}"
+    )
+    return {
+        "deleted": deleted,
+        "delete_fail": delete_fail,
+        "local_deleted": local_deleted,
+        "local_delete_fail": local_delete_fail,
+    }
 
 
 def run_pool_clean_with_probe_result(
@@ -982,12 +1161,17 @@ def run_pool_refresh_status(
 
     gap = max(0, int(target_count or 0) - int(valid_count)) if int(target_count or 0) > 0 else 0
     invalid_count = int(probe_result.get("invalid_count", 0))
+    remote_invalid_count = int(probe_result.get("remote_invalid_count", 0))
+    local_invalid_count = int(probe_result.get("local_invalid_count", 0))
     deleted = int(clean_result.get("deleted", 0))
     delete_fail = int(clean_result.get("delete_fail", 0))
+    local_deleted = int(clean_result.get("local_deleted", 0))
+    local_delete_fail = int(clean_result.get("local_delete_fail", 0))
 
     log(
-        f"[Pool] 校验完成: 删除401={deleted}, 远端删除失败={delete_fail}, "
-        f"最新有效={valid_count}, 总账号={total_after}, 缺口={gap}"
+        f"[Pool] 校验完成: 远程401={remote_invalid_count}, 本地401={local_invalid_count}, "
+        f"远端删除={deleted}, 本地删除={local_deleted}, 远端删除失败={delete_fail}, "
+        f"本地删除失败={local_delete_fail}, 最新有效={valid_count}, 总账号={total_after}, 缺口={gap}"
     )
 
     return {
@@ -999,10 +1183,15 @@ def run_pool_refresh_status(
         "target_count": int(target_count or 0),
         "gap": gap,
         "invalid_count": invalid_count,
+        "remote_invalid_count": remote_invalid_count,
+        "local_invalid_count": local_invalid_count,
         "deleted": deleted,
         "delete_fail": delete_fail,
+        "local_deleted": local_deleted,
+        "local_delete_fail": local_delete_fail,
         "probe_total": probe_result.get("total", 0),
         "probe_target": probe_result.get("target", 0),
+        "probe_local_total": probe_result.get("local_total", 0),
     }
 
 
