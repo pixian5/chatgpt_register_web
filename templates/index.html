@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>22</title>
+  <title>23</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1261,7 +1261,7 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">22</div>
+          <div class="version-chip">23</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
@@ -1394,16 +1394,21 @@ function applyUiDefaults() {
 let _savedConfig = {};
 
 function getPoolConfig() {
-  const proxy = _savedConfig.pool_proxy || _savedConfig.proxy || '';
-  return { ..._savedConfig, proxy };
+  const base_url = document.getElementById('cfg-pool-url')?.value.trim() || _savedConfig.base_url || '';
+  const token = document.getElementById('cfg-pool-token')?.value.trim() || _savedConfig.token || '';
+  const target_type = document.getElementById('cfg-pool-type')?.value || _savedConfig.target_type || APP_DEFAULTS.target_type;
+  const target_count = _readInt('cfg-pool-target', _savedConfig.target_count ?? APP_DEFAULTS.target_count);
+  const proxy = document.getElementById('cfg-pool-proxy')?.value.trim() || _savedConfig.pool_proxy || _savedConfig.proxy || '';
+  return { ..._savedConfig, base_url, token, target_type, target_count, proxy };
 }
 
 // 从服务端响应对象同步到 _savedConfig
 function _syncSavedConfig(d) {
   const pool = d.pool || {};
+  const masked = '********';
   _savedConfig = {
     base_url: pool.base_url ?? '',
-    token: pool.token ?? '',
+    token: (pool.token && pool.token !== masked) ? pool.token : '',
     target_type: pool.target_type ?? APP_DEFAULTS.target_type,
     target_count: pool.target_count ?? APP_DEFAULTS.target_count,
     proxy: d.proxy ?? '',
