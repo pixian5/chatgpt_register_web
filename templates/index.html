@@ -1966,22 +1966,72 @@ async function confirmRegOnly() {
   }
 }
 
+function _applyRegOnlyStatus(d) {
+  const idleEl = document.getElementById('regonly-idle');
+  const inputEl = document.getElementById('regonly-input');
+  const runningEl = document.getElementById('regonly-running');
+  const doneEl = document.getElementById('regonly-done');
+  const progEl = document.getElementById('regonly-progress');
+  const resultEl = document.getElementById('regonly-result');
+  const total = Number(d.total || 0);
+  const success = Number(d.success || 0);
+  const fail = Number(d.fail || 0);
+
+  if (progEl) progEl.textContent = `注册中... ${success}/${total} 成功，${fail} 失败`;
+
+  if (d.running) {
+    switchToLogs();
+    if (idleEl) idleEl.style.display = 'none';
+    if (inputEl) inputEl.style.display = 'none';
+    if (doneEl) doneEl.style.display = 'none';
+    if (runningEl) runningEl.style.display = 'block';
+    connectRegWs();
+    return;
+  }
+
+  if (runningEl) runningEl.style.display = 'none';
+  closeRegWs();
+  if (_regOnlyPollTimer) {
+    clearInterval(_regOnlyPollTimer);
+    _regOnlyPollTimer = null;
+  }
+
+  if (total > 0 || success > 0 || fail > 0) {
+    switchToLogs();
+    if (idleEl) idleEl.style.display = 'none';
+    if (inputEl) inputEl.style.display = 'none';
+    if (doneEl) doneEl.style.display = 'block';
+    if (resultEl) {
+      resultEl.innerHTML =
+        `完成：<b style="color:var(--green)">${success}</b> 成功，` +
+        `<b style="color:var(--red)">${fail}</b> 失败`;
+    }
+    return;
+  }
+
+  if (doneEl) doneEl.style.display = 'none';
+  if (inputEl) inputEl.style.display = 'none';
+  if (idleEl) idleEl.style.display = 'block';
+}
+
 async function _pollRegOnly() {
   try {
-    const r = await fetch('/api/register/status');
+    const r = await fetch('/api/register/status', { cache: 'no-store' });
     const d = await r.json();
-    const prog = document.getElementById('regonly-progress');
-    if (prog) prog.textContent = `注册中... ${d.success}/${d.total} 成功，${d.fail} 失败`;
+    _applyRegOnlyStatus(d);
     if (!d.running) {
-      clearInterval(_regOnlyPollTimer);
-      _regOnlyPollTimer = null;
-      closeRegWs();
-      document.getElementById('regonly-running').style.display = 'none';
-      document.getElementById('regonly-done').style.display = 'block';
-      document.getElementById('regonly-result').innerHTML =
-        `完成：<b style="color:var(--green)">${d.success}</b> 成功，` +
-        `<b style="color:var(--red)">${d.fail}</b> 失败`;
       refreshAccounts();
+    }
+  } catch (e) {}
+}
+
+async function restoreRegOnlyStatus() {
+  try {
+    const r = await fetch('/api/register/status', { cache: 'no-store' });
+    const d = await r.json();
+    _applyRegOnlyStatus(d);
+    if (d.running && !_regOnlyPollTimer) {
+      _regOnlyPollTimer = setInterval(_pollRegOnly, 1500);
     }
   } catch (e) {}
 }
@@ -2558,6 +2608,7 @@ async function doSync() {
     if (e.key === 'Escape') closeSettingsDrawer();
   });
   await loadSettings();
+  await restoreRegOnlyStatus();
   await initPoolLogCursor(true);
   connectPoolWs();
 
