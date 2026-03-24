@@ -176,15 +176,34 @@ jobs:
   deploy-hf:
     name: Deploy To Hugging Face
     runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_SPACE_ID: ${{ secrets.HF_SPACE_ID }}
+      DUCKMAIL_API_BASE: ${{ secrets.DUCKMAIL_API_BASE }}
+      DUCKMAIL_DOMAIN: ${{ secrets.DUCKMAIL_DOMAIN }}
+      DUCKMAIL_BEARER: ${{ secrets.DUCKMAIL_BEARER }}
+      POOL_BASE_URL: ${{ secrets.POOL_BASE_URL }}
+      POOL_TOKEN: ${{ secrets.POOL_TOKEN }}
+      POOL_TARGET_TYPE: ${{ secrets.POOL_TARGET_TYPE }}
+      POOL_TARGET_COUNT: ${{ secrets.POOL_TARGET_COUNT }}
+      POOL_PROXY: ${{ secrets.POOL_PROXY }}
+      POOL_PROBE_WORKERS: ${{ secrets.POOL_PROBE_WORKERS }}
+      POOL_DELETE_WORKERS: ${{ secrets.POOL_DELETE_WORKERS }}
+      POOL_INTERVAL_MIN: ${{ secrets.POOL_INTERVAL_MIN }}
+      PROXY: ${{ secrets.PROXY }}
+      WORKERS: ${{ secrets.WORKERS }}
+      PROXY_TEST_WORKERS: ${{ secrets.PROXY_TEST_WORKERS }}
+      ENABLE_OAUTH: ${{ secrets.ENABLE_OAUTH }}
+      OAUTH_REQUIRED: ${{ secrets.OAUTH_REQUIRED }}
+      OAUTH_ISSUER: ${{ secrets.OAUTH_ISSUER }}
+      OAUTH_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_ID }}
+      OAUTH_REDIRECT_URI: ${{ secrets.OAUTH_REDIRECT_URI }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Check HF secrets
         id: hf-check
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_SPACE_ID: ${{ secrets.HF_SPACE_ID }}
         run: |
           if [ -n "$HF_TOKEN" ] && [ -n "$HF_SPACE_ID" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -195,6 +214,54 @@ jobs:
       - name: Skip HF deploy when secrets missing
         if: steps.hf-check.outputs.enabled != 'true'
         run: echo "HF_TOKEN 或 HF_SPACE_ID 未配置，跳过 HF 部署"
+
+      - name: Sync HF Space runtime config
+        if: steps.hf-check.outputs.enabled == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install huggingface_hub
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          repo_id = os.environ["HF_SPACE_ID"]
+          token = os.environ["HF_TOKEN"]
+          api = HfApi(token=token)
+
+          variables = {
+              "DUCKMAIL_API_BASE": os.environ.get("DUCKMAIL_API_BASE", ""),
+              "DUCKMAIL_DOMAIN": os.environ.get("DUCKMAIL_DOMAIN", ""),
+              "POOL_BASE_URL": os.environ.get("POOL_BASE_URL", ""),
+              "POOL_TARGET_TYPE": os.environ.get("POOL_TARGET_TYPE", ""),
+              "POOL_TARGET_COUNT": os.environ.get("POOL_TARGET_COUNT", ""),
+              "POOL_PROXY": os.environ.get("POOL_PROXY", ""),
+              "POOL_PROBE_WORKERS": os.environ.get("POOL_PROBE_WORKERS", ""),
+              "POOL_DELETE_WORKERS": os.environ.get("POOL_DELETE_WORKERS", ""),
+              "POOL_INTERVAL_MIN": os.environ.get("POOL_INTERVAL_MIN", ""),
+              "PROXY": os.environ.get("PROXY", ""),
+              "WORKERS": os.environ.get("WORKERS", ""),
+              "PROXY_TEST_WORKERS": os.environ.get("PROXY_TEST_WORKERS", ""),
+              "ENABLE_OAUTH": os.environ.get("ENABLE_OAUTH", ""),
+              "OAUTH_REQUIRED": os.environ.get("OAUTH_REQUIRED", ""),
+              "OAUTH_ISSUER": os.environ.get("OAUTH_ISSUER", ""),
+              "OAUTH_CLIENT_ID": os.environ.get("OAUTH_CLIENT_ID", ""),
+              "OAUTH_REDIRECT_URI": os.environ.get("OAUTH_REDIRECT_URI", ""),
+          }
+          secrets = {
+              "DUCKMAIL_BEARER": os.environ.get("DUCKMAIL_BEARER", ""),
+              "POOL_TOKEN": os.environ.get("POOL_TOKEN", ""),
+          }
+
+          for key, value in variables.items():
+              if value != "":
+                  api.add_space_variable(repo_id=repo_id, key=key, value=value, token=token)
+
+          for key, value in secrets.items():
+              if value != "":
+                  api.add_space_secret(repo_id=repo_id, key=key, value=value, token=token)
+
+          print(f"Synced {len([k for k, v in variables.items() if v != ''])} variables and {len([k for k, v in secrets.items() if v != ''])} secrets to {repo_id}")
+          PY
 
       - name: Export clean tree
         if: steps.hf-check.outputs.enabled == 'true'
@@ -212,6 +279,3 @@ jobs:
           git commit -m "deploy ${GITHUB_SHA}"
           git remote add origin "https://oauth2:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_ID}"
           git push -f origin HEAD:main
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_SPACE_ID: ${{ secrets.HF_SPACE_ID }}
