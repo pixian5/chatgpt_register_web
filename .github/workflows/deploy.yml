@@ -164,6 +164,12 @@ jobs:
             EOF
             systemctl daemon-reload
             systemctl enable "${SERVICE_NAME}" >/dev/null 2>&1 || true
+            systemctl stop "${SERVICE_NAME}" >/dev/null 2>&1 || true
+            if command -v fuser >/dev/null 2>&1; then
+              fuser -k "${APP_PORT}/tcp" >/dev/null 2>&1 || true
+            fi
+            pkill -f "${APP_DIR}/.venv/bin/python -m uvicorn web_app:app --host 0.0.0.0 --port ${APP_PORT}" >/dev/null 2>&1 || true
+            sleep 1
             systemctl restart "${SERVICE_NAME}"
             systemctl --no-pager --full status "${SERVICE_NAME}" | sed -n '1,30p'
 
