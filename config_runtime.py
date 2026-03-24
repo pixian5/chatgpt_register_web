@@ -108,7 +108,7 @@ def load_runtime_config(defaults: dict, base_dir: str | Path) -> dict:
     pool["proxy"] = env.get("POOL_PROXY", pool.get("proxy", ""))
     pool["probe_workers"] = _parse_int(env.get("POOL_PROBE_WORKERS"), int(pool.get("probe_workers", 20) or 20))
     pool["delete_workers"] = _parse_int(env.get("POOL_DELETE_WORKERS"), int(pool.get("delete_workers", 10) or 10))
-    pool["interval_min"] = _parse_int(env.get("POOL_INTERVAL_MIN"), int(pool.get("interval_min", 30) or 30))
+    pool["interval_min"] = _parse_int(env.get("POOL_INTERVAL_MIN"), int(pool.get("interval_min", 1) or 1))
     merged["pool"] = pool
     return merged
 
