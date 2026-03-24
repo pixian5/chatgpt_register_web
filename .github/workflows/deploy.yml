@@ -75,6 +75,7 @@ jobs:
             REPO_URL="${SERVER_REPO_URL}"
             BRANCH="${{ github.ref_name }}"
             SERVICE_NAME="chatgpt-register-web"
+            BACKUP_SUFFIX="$(date +%Y%m%d-%H%M%S)"
             mkdir -p "$(dirname "$APP_DIR")"
             if [ ! -d "$APP_DIR/.git" ]; then
               git clone "$REPO_URL" "$APP_DIR"
@@ -82,7 +83,21 @@ jobs:
             cd "$APP_DIR"
             git fetch origin "$BRANCH"
             git checkout "$BRANCH"
-            git pull --ff-only origin "$BRANCH"
+            BACKUP_DIR="${APP_DIR}/.deploy-backup-${BACKUP_SUFFIX}"
+            mkdir -p "$BACKUP_DIR"
+            for path in ak.txt rk.txt registered_accounts.txt .env .env.local config.local.json config.json codex_tokens; do
+              if [ -e "$path" ]; then
+                cp -a "$path" "$BACKUP_DIR/"
+              fi
+            done
+            git reset --hard "origin/${BRANCH}"
+            git clean -fd
+            for path in ak.txt rk.txt registered_accounts.txt .env .env.local config.local.json config.json codex_tokens; do
+              if [ -e "$BACKUP_DIR/$path" ]; then
+                rm -rf "$path"
+                cp -a "$BACKUP_DIR/$path" "$path"
+              fi
+            done
             if [ ! -d .venv ]; then
               python3 -m venv .venv
             fi

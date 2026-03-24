@@ -6,6 +6,8 @@ APP_PORT="${APP_PORT:-52789}"
 REPO_URL="${REPO_URL:-https://github.com/pixian5/chatgpt_register_web.git}"
 BRANCH="${BRANCH:-main}"
 SERVICE_NAME="${SERVICE_NAME:-chatgpt-register-web}"
+BACKUP_SUFFIX="${BACKUP_SUFFIX:-$(date +%Y%m%d-%H%M%S)}"
+BACKUP_DIR="${APP_DIR}/.deploy-backup-${BACKUP_SUFFIX}"
 
 mkdir -p "$(dirname "$APP_DIR")"
 
@@ -17,7 +19,23 @@ cd "$APP_DIR"
 
 git fetch origin "$BRANCH"
 git checkout "$BRANCH"
-git pull --ff-only origin "$BRANCH"
+
+mkdir -p "$BACKUP_DIR"
+for path in ak.txt rk.txt registered_accounts.txt .env .env.local config.local.json config.json codex_tokens; do
+  if [ -e "$path" ]; then
+    cp -a "$path" "$BACKUP_DIR/"
+  fi
+done
+
+git reset --hard "origin/${BRANCH}"
+git clean -fd
+
+for path in ak.txt rk.txt registered_accounts.txt .env .env.local config.local.json config.json codex_tokens; do
+  if [ -e "$BACKUP_DIR/$path" ]; then
+    rm -rf "$path"
+    cp -a "$BACKUP_DIR/$path" "$path"
+  fi
+done
 
 if [ ! -d .venv ]; then
   python3 -m venv .venv
