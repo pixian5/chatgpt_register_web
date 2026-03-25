@@ -683,6 +683,7 @@ def run_pool_probe(
         name: str,
         source: str,
         file_id: str = "",
+        remote_name: str = "",
         path: str = "",
         location: str = "",
         status: int = 401,
@@ -690,9 +691,12 @@ def run_pool_probe(
         nonlocal remote_invalid_count, local_invalid_count
         with probe_lock:
             if source == "remote":
+                raw_remote_name = str(remote_name or name or file_id or "").strip()
                 remote_invalid_401.append({
                     "name": _normalize_token_name(name) or name or file_id,
                     "id": file_id,
+                    "remote_name": raw_remote_name,
+                    "path": path,
                     "status": status,
                     "source": "remote",
                 })
@@ -739,7 +743,14 @@ def run_pool_probe(
             data = r.json() if r.content else {}
             status_code = data.get("status_code") if isinstance(data, dict) else None
             if status_code == 401:
-                _record_invalid(name=name, file_id=file_id, source="remote", status=401)
+                _record_invalid(
+                    name=name,
+                    file_id=file_id,
+                    remote_name=name,
+                    path=str(f.get("path") or ""),
+                    source="remote",
+                    status=401,
+                )
                 log(f"[Pool] 远程401: {display_name}")
             elif status_code is None:
                 log(f"[Pool] 远程探测返回缺少 status_code: {display_name}")
@@ -934,12 +945,6 @@ def _delete_invalid_accounts(
             seen.add(key)
             attempts.append((label, url, params, json_body))
 
-        if file_id:
-            fid = str(file_id)
-            add_attempt("id_path", f"{base}/v0/management/auth-files/{quote(fid, safe='')}")
-            add_attempt("id_query", f"{base}/v0/management/auth-files", {"id": fid})
-            add_attempt("id_json", f"{base}/v0/management/auth-files", json_body={"id": fid})
-
         if name:
             nm = str(name)
             candidates = [(nm, "name")]
@@ -948,11 +953,13 @@ def _delete_invalid_accounts(
                 candidates.append((clean_name, "name_no_ext"))
 
             for val, tag in candidates:
-                add_attempt(f"{tag}_path", f"{base}/v0/management/auth-files/{quote(val, safe='')}")
                 add_attempt(f"{tag}_query", f"{base}/v0/management/auth-files", {"name": val})
                 add_attempt(f"{tag}_filename_query", f"{base}/v0/management/auth-files", {"filename": val})
-                add_attempt(f"{tag}_json", f"{base}/v0/management/auth-files", json_body={"name": val})
-                add_attempt(f"{tag}_filename_json", f"{base}/v0/management/auth-files", json_body={"filename": val})
+
+        if file_id:
+            fid = str(file_id)
+            add_attempt("id_as_name_query", f"{base}/v0/management/auth-files", {"name": fid})
+            add_attempt("id_as_filename_query", f"{base}/v0/management/auth-files", {"filename": fid})
 
         return attempts
 
@@ -960,10 +967,12 @@ def _delete_invalid_accounts(
         nonlocal deleted, delete_fail, local_deleted, local_delete_fail
         name = item.get("name", "")
         file_id = item.get("id") or ""
+        remote_name = item.get("remote_name") or ""
+        remote_path = item.get("path") or ""
         source = item.get("source")
         has_remote = source == "remote"
         has_local = source == "local"
-        display_name = name or file_id or ""
+        display_name = remote_name or name or file_id or os.path.basename(str(remote_path or "")) or ""
         if not display_name:
             with del_lock:
                 delete_fail += 1
@@ -972,7 +981,19 @@ def _delete_invalid_accounts(
         remote_deleted_ok = False
         try:
             if has_remote:
-                attempts = _build_attempts(file_id, name)
+                remote_candidates = []
+                for candidate in (
+                    str(remote_name or "").strip(),
+                    os.path.basename(str(remote_path or "").strip()),
+                    str(file_id or "").strip(),
+                    str(name or "").strip(),
+                ):
+                    if candidate and candidate not in remote_candidates:
+                        remote_candidates.append(candidate)
+
+                attempts = []
+                for candidate in remote_candidates:
+                    attempts.extend(_build_attempts(file_id, candidate))
                 if not attempts:
                     with del_lock:
                         delete_fail += 1
