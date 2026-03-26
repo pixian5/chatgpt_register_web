@@ -12,6 +12,7 @@ wheels/
 uvicorn.log
 
 codex_tokens
+server_tokens
 
 *.zip
 .env

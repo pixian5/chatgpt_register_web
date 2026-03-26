@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查余额</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121936;
+      --panel-2: #1a2347;
+      --text: #e8ecff;
+      --muted: #9aa6d1;
+      --ok: #3ddc97;
+      --warn: #ffcc66;
+      --err: #ff6b6b;
+      --line: rgba(255,255,255,0.08);
+      --accent: #7aa2ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      background:
+        radial-gradient(circle at top left, #16214d 0%, transparent 30%),
+        radial-gradient(circle at top right, #1d1247 0%, transparent 28%),
+        var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .title {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      margin-bottom: 24px;
+      line-height: 1.7;
+    }
+
+    .panel {
+      background: rgba(18, 25, 54, 0.88);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+      margin-bottom: 18px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(122,162,255,0.15);
+    }
+
+    .btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 11px 16px;
+      background: linear-gradient(135deg, #2876ff, #1fbf8f);
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+      transition: transform .15s ease, opacity .15s ease;
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: #26325f;
+    }
+
+    .status {
+      margin-top: 10px;
+      color: var(--muted);
+      min-height: 22px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+    }
+
+    .card-title {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .card-value {
+      font-size: 28px;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .err { color: var(--err); }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+
+    .model-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 10px;
+    }
+
+    .model-item {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.03);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .model-id {
+      font-weight: 700;
+      margin-bottom: 6px;
+      word-break: break-all;
+    }
+
+    .model-meta {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #0a0f24;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      color: #cfe1ff;
+      max-height: 400px;
+      overflow: auto;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .tip {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    @media (max-width: 900px) {
+      .grid, .cards, .two-col {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="title">查余额</div>
+    <div class="subtitle">
+      这个页面会根据你输入的 <b>base</b> 和 <b>key</b>，
+      查询 <code>/v1/dashboard/billing/subscription</code>、
+      <code>/v1/dashboard/billing/usage</code> 和 <code>/v1/models</code>，
+      然后把结果翻译成更直观的面板。
+    </div>
+
+    <div class="panel">
+      <div class="grid">
+        <div class="full">
+          <label for="base">Base URL</label>
+          <input id="base" placeholder="例如：https://your-domain.com" />
+        </div>
+
+        <div class="full">
+          <label for="key">API Key</label>
+          <input id="key" placeholder="例如：sk-xxxxxx" />
+        </div>
+
+        <div class="full">
+          <label for="timeout">Timeout (ms)</label>
+          <input id="timeout" type="number" value="15000" />
+        </div>
+      </div>
+
+      <div class="btns">
+        <button id="queryBtn">查询</button>
+        <button id="clearBtn" class="btn-secondary">清空</button>
+      </div>
+
+      <div id="status" class="status">等待查询…</div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title">概览</div>
+      <div class="cards">
+        <div class="card">
+          <div class="card-title">总额度</div>
+          <div id="softLimit" class="card-value">-</div>
+        </div>
+        <div class="card">
+          <div class="card-title">已用额度（已按 0.01 换算）</div>
+          <div id="usedUsage" class="card-value">-</div>
+        </div>
+        <div class="card">
+          <div class="card-title">到期时间</div>
+          <div id="accessUntil" class="card-value" style="font-size:18px;">-</div>
+        </div>
+      </div>
+      <div class="tip" style="margin-top:12px;">
+        注意：字段名虽然可能带有 usd，但实际展示单位可能由站点配置决定，也未必一定是当前 token 的独立统计。
+        其中 total_usage 已按 0.01 系数换算后显示。
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title">模型列表</div>
+      <div id="modelsSummary" class="tip" style="margin-bottom:12px;">尚未查询</div>
+      <div id="modelList" class="model-list"></div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title">原始返回</div>
+      <div class="two-col">
+        <div>
+          <label>subscription</label>
+          <pre id="rawSubscription">-</pre>
+        </div>
+        <div>
+          <label>usage</label>
+          <pre id="rawUsage">-</pre>
+        </div>
+        <div class="full">
+          <label>models</label>
+          <pre id="rawModels">-</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const elements = {
+      base: document.getElementById('base'),
+      key: document.getElementById('key'),
+      timeout: document.getElementById('timeout'),
+      queryBtn: document.getElementById('queryBtn'),
+      clearBtn: document.getElementById('clearBtn'),
+      status: document.getElementById('status'),
+
+      softLimit: document.getElementById('softLimit'),
+      usedUsage: document.getElementById('usedUsage'),
+      accessUntil: document.getElementById('accessUntil'),
+
+      modelsSummary: document.getElementById('modelsSummary'),
+      modelList: document.getElementById('modelList'),
+
+      rawSubscription: document.getElementById('rawSubscription'),
+      rawUsage: document.getElementById('rawUsage'),
+      rawModels: document.getElementById('rawModels')
+    }
+
+    function normalizeBase(base) {
+      return (base || '').trim().replace(/\/+$/, '')
+    }
+
+    function normalizeKey(key) {
+      return (key || '').trim()
+    }
+
+    function setStatus(text, type = '') {
+      elements.status.textContent = text
+      elements.status.className = 'status ' + type
+    }
+
+    function setButtonsDisabled(disabled) {
+      elements.queryBtn.disabled = disabled
+    }
+
+    function formatJson(data) {
+      try {
+        return JSON.stringify(data, null, 2)
+      } catch {
+        return String(data)
+      }
+    }
+
+    function formatTimestamp(seconds) {
+      if (!seconds || Number(seconds) === 0) return '未设置 / 永久 / 未知'
+      const date = new Date(Number(seconds) * 1000)
+      if (isNaN(date.getTime())) return String(seconds)
+      return date.toLocaleString()
+    }
+
+    function buildHeaders(key) {
+      return {
+        'Authorization': 'Bearer ' + key
+      }
+    }
+
+    function formatUsageValue(rawUsage) {
+      if (rawUsage === undefined || rawUsage === null || rawUsage === '-') {
+        return '-'
+      }
+
+      const convertedUsage = Number(rawUsage) * 0.01
+      if (!Number.isFinite(convertedUsage)) {
+        return '-'
+      }
+
+      return convertedUsage.toFixed(2)
+    }
+
+    async function fetchJson(url, key, timeoutMs) {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: buildHeaders(key),
+          signal: controller.signal
+        })
+
+        const text = await response.text()
+        let data
+
+        try {
+          data = JSON.parse(text)
+        } catch {
+          data = { raw_text: text }
+        }
+
+        return {
+          ok: response.ok,
+          status: response.status,
+          data: data
+        }
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+
+    function renderOverview(subscription, usage) {
+      const totalLimit =
+        subscription?.soft_limit_usd ??
+        subscription?.hard_limit_usd ??
+        subscription?.system_hard_limit_usd ??
+        '-'
+
+      const totalUsage = formatUsageValue(usage?.total_usage)
+      const accessUntil = formatTimestamp(subscription?.access_until)
+
+      elements.softLimit.textContent = totalLimit
+      elements.usedUsage.textContent = totalUsage
+      elements.accessUntil.textContent = accessUntil
+    }
+
+    function renderModels(modelsData) {
+      const list = Array.isArray(modelsData?.data) ? modelsData.data : []
+      elements.modelList.innerHTML = ''
+
+      if (!list.length) {
+        elements.modelsSummary.textContent = '没有拿到模型列表，或者当前 key 没有可见模型。'
+        return
+      }
+
+      elements.modelsSummary.textContent = `共发现 ${list.length} 个模型`
+
+      for (const model of list) {
+        const item = document.createElement('div')
+        item.className = 'model-item'
+
+        const endpointTypes = Array.isArray(model.supported_endpoint_types)
+          ? model.supported_endpoint_types.join('、')
+          : '未提供'
+
+        item.innerHTML = `
+          <div class="model-id">${escapeHtml(model.id || '-')}</div>
+          <div class="model-meta">
+            owned_by：${escapeHtml(model.owned_by || '-')}<br>
+            object：${escapeHtml(model.object || '-')}<br>
+            endpoints：${escapeHtml(endpointTypes)}<br>
+            created：${escapeHtml(model.created ? formatTimestamp(model.created) : '-')}
+          </div>
+        `
+        elements.modelList.appendChild(item)
+      }
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;')
+    }
+
+    function clearResults() {
+      elements.softLimit.textContent = '-'
+      elements.usedUsage.textContent = '-'
+      elements.accessUntil.textContent = '-'
+
+      elements.modelsSummary.textContent = '尚未查询'
+      elements.modelList.innerHTML = ''
+
+      elements.rawSubscription.textContent = '-'
+      elements.rawUsage.textContent = '-'
+      elements.rawModels.textContent = '-'
+
+      setStatus('已清空')
+    }
+
+    async function queryAll() {
+      const base = normalizeBase(elements.base.value)
+      const key = normalizeKey(elements.key.value)
+      const timeoutMs = Number(elements.timeout.value) || 15000
+
+      if (!base || !key) {
+          setStatus('请先填写 Base URL 和 API Key', 'warn')
+        return
+      }
+
+      setButtonsDisabled(true)
+      setStatus('正在查询额度、用量与模型列表……')
+
+      const subscriptionUrl = `${base}/v1/dashboard/billing/subscription`
+      const usageUrl = `${base}/v1/dashboard/billing/usage`
+      const modelsUrl = `${base}/v1/models`
+
+      try {
+        const [subscriptionRes, usageRes, modelsRes] = await Promise.all([
+          fetchJson(subscriptionUrl, key, timeoutMs),
+          fetchJson(usageUrl, key, timeoutMs),
+          fetchJson(modelsUrl, key, timeoutMs)
+        ])
+
+        elements.rawSubscription.textContent = formatJson(subscriptionRes.data)
+        elements.rawUsage.textContent = formatJson(usageRes.data)
+        elements.rawModels.textContent = formatJson(modelsRes.data)
+
+        renderOverview(subscriptionRes.data, usageRes.data)
+        renderModels(modelsRes.data)
+
+        const hasError =
+          !subscriptionRes.ok || !usageRes.ok || !modelsRes.ok ||
+          subscriptionRes.data?.error || usageRes.data?.error || modelsRes.data?.error
+
+        if (hasError) {
+          setStatus('查询完成，但至少一个接口返回了错误。请查看下方原始返回。', 'warn')
+        } else {
+          setStatus('查询完成。', 'ok')
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          setStatus('请求超时：目标站点响应过慢。', 'err')
+        } else {
+          setStatus('请求失败：' + (error.message || error), 'err')
+        }
+      } finally {
+        setButtonsDisabled(false)
+      }
+    }
+
+    elements.queryBtn.addEventListener('click', queryAll)
+    elements.clearBtn.addEventListener('click', clearResults)
+
+    ;(() => {
+      const savedBase = localStorage.getItem('dashboard_base') || `${location.protocol}//${location.hostname}:52788`
+      const savedKey = localStorage.getItem('dashboard_key') || ''
+
+      elements.base.value = savedBase
+      elements.key.value = savedKey
+
+      ;['base', 'key'].forEach(name => {
+        elements[name].addEventListener('input', () => {
+          localStorage.setItem('dashboard_base', elements.base.value)
+          localStorage.setItem('dashboard_key', elements.key.value)
+        })
+      })
+    })()
+  </script>
+</body>
+</html>
