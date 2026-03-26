@@ -18,6 +18,6 @@
     "proxy": "",
     "probe_workers": 40,
     "delete_workers": 10,
-    "interval_min": 1
+    "interval_min": 3
   }
 }
