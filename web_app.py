@@ -191,6 +191,18 @@ def _make_pool_log_cb():
     return _push_pool_log_sync
 
 
+def _reset_pool_logs() -> None:
+    global _pool_log_seq
+    with _pool_log_lock:
+        _pool_log_history.clear()
+        _pool_log_seq = 0
+    try:
+        while True:
+            _pool_log_queue.get_nowait()
+    except asyncio.QueueEmpty:
+        pass
+
+
 def _token_fingerprint(token: str) -> str:
     if not token:
         return ""
@@ -416,6 +428,7 @@ async def pool_probe(body: dict = Body(...)):
     if not base_url or not token:
         raise HTTPException(status_code=400, detail="base_url 和 token 不能为空")
 
+    _reset_pool_logs()
     _pool_state["running"] = True
     _pool_state["task"] = "probe"
     log_cb = _make_pool_log_cb()
@@ -455,6 +468,7 @@ async def pool_clean(body: dict = Body(...)):
     if not base_url or not token:
         raise HTTPException(status_code=400, detail="base_url 和 token 不能为空")
 
+    _reset_pool_logs()
     _pool_state["running"] = True
     _pool_state["task"] = "clean"
     log_cb = _make_pool_log_cb()
@@ -519,6 +533,7 @@ async def pool_fill(body: dict = Body(...)):
     if count <= 0:
         raise HTTPException(status_code=400, detail="count 必须大于 0")
 
+    _reset_pool_logs()
     _pool_state["running"] = True
     _pool_state["task"] = "fill"
     _pool_state["stop_requested"] = False
@@ -647,6 +662,7 @@ async def pool_sync(body: dict = Body(...)):
     if not base_url or not token:
         raise HTTPException(status_code=400, detail="base_url 和 token 不能为空")
 
+    _reset_pool_logs()
     log_cb = _make_pool_log_cb()
     result = await asyncio.get_event_loop().run_in_executor(
         None, lambda: reg.sync_local_remote(base_url, token, target_type, proxy=proxy, log_cb=log_cb, target_count=target_count)
@@ -709,6 +725,7 @@ async def pool_inspect(body: dict = Body(...)):
     if not base_url or not token:
         raise HTTPException(status_code=400, detail="base_url 和 token 不能为空")
 
+    _reset_pool_logs()
     log_cb = _make_pool_log_cb()
     loop = asyncio.get_event_loop()
     cfg = reg.load_config()
@@ -995,6 +1012,7 @@ def _run_daemon_once():
 async def pool_daemon_start(body: dict = Body(...)):
     daemon_body = dict(body or {})
     daemon_body.update(_resolve_pool_request_config(body))
+    _reset_pool_logs()
     interval_min = _start_pool_daemon(daemon_body)
     _persist_pool_interval(interval_min)
     return {"ok": True, "interval_min": interval_min}
@@ -1050,6 +1068,7 @@ async def pool_daemon_run_once(body: dict = Body(default={})):
     if _pool_daemon["running_now"]:
         raise HTTPException(status_code=409, detail="守护进程正在运行中")
 
+    _reset_pool_logs()
     log_cb = _make_pool_log_cb()
 
     def run_task():

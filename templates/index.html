@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>24</title>
+  <title>25</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1261,7 +1261,7 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">24</div>
+          <div class="version-chip">25</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
@@ -1604,6 +1604,14 @@ function clearLog() {
   const box = document.getElementById('log-box');
   _logBuffer = [];
   if (box) box.innerHTML = '<span class="log-placeholder">日志已清空</span>';
+}
+
+function resetLiveLog(placeholder = '等待实时日志...') {
+  _stopPoolLogPolling();
+  _poolLogSeq = 0;
+  _logBuffer = [];
+  const box = document.getElementById('log-box');
+  if (box) box.innerHTML = `<span class="log-placeholder">${placeholder}</span>`;
 }
 
 function scrollLogsTop() {
@@ -2164,6 +2172,7 @@ async function startInspect(options = {}) {
   }
 
   switchToLogs();
+  resetLiveLog('等待本次检查日志...');
   _showInspectPanel('inspecting');
 
   try {
@@ -2223,6 +2232,7 @@ async function confirmFill() {
 
   _resetFillSuccess();
   switchToLogs();
+  resetLiveLog('等待本次补号日志...');
   const { base_url, token, target_type, target_count, proxy } = getPoolConfig();
 
   _showInspectPanel('running');
@@ -2307,6 +2317,7 @@ async function startDaemon() {
     return;
   }
   const interval_min = _readInt('daemon-interval', _savedConfig.pool_interval_min || APP_DEFAULTS.pool_interval_min);
+  resetLiveLog('等待守护进程实时日志...');
 
   try {
     const r = await fetch('/api/pool/daemon/start', {
@@ -2573,6 +2584,8 @@ async function doSync() {
     appendLog('[提示] 请先在左栏填写 CliProxyAPI URL 和 Token');
     return;
   }
+  switchToLogs();
+  resetLiveLog('等待本次同步日志...');
   const syncBtn = document.getElementById('btn-sync-accounts');
   syncBtn.disabled = true;
   syncBtn.textContent = '同步中...';
