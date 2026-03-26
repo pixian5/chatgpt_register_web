@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>25</title>
+  <title>26</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1133,7 +1133,10 @@ input:focus, select:focus {
     <div class="card pool-card">
       <div class="card-header">
         <div class="card-title">池状态</div>
-        <button class="btn btn-sm btn-secondary" id="btn-refresh-pool" type="button" onclick="refreshPoolStatus()">↻ 刷新</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-sm btn-secondary" id="btn-refresh-pool" type="button" onclick="refreshPoolStatus()">↻ 刷新</button>
+          <button class="btn btn-sm btn-secondary" id="btn-refresh-sync-pool" type="button" onclick="refreshAndSyncPool()">校验并同步</button>
+        </div>
       </div>
       <div class="pool-status-content">
         <div class="pool-main-row">
@@ -1261,7 +1264,7 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">25</div>
+          <div class="version-chip">26</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
@@ -2104,17 +2107,27 @@ function resetRegOnly() {
 // ════════════════════════════════════════════════════════════════
 // 池状态刷新
 // ════════════════════════════════════════════════════════════════
-async function refreshPoolStatus() {
+async function refreshPoolStatus(options = {}) {
   const btn = document.getElementById('btn-refresh-pool');
+  const syncBtn = document.getElementById('btn-refresh-sync-pool');
+  const preserveLog = options.preserveLog === true;
+  const buttonText = options.buttonText || '↻ 校验中...';
   btn.disabled = true;
-  btn.textContent = '↻ 校验中...';
+  btn.textContent = buttonText;
+  if (syncBtn) syncBtn.disabled = true;
 
   const { base_url, token, target_type, target_count, proxy } = getPoolConfig();
   if (!base_url || !token) {
     btn.disabled = false;
     btn.textContent = '↻ 刷新';
+    if (syncBtn) syncBtn.disabled = false;
     appendLog('[提示] 请先在左栏填写 CliProxyAPI Base URL 和 Token');
     return;
+  }
+
+  if (!preserveLog) {
+    switchToLogs();
+    resetLiveLog('等待本次校验日志...');
   }
 
   try {
@@ -2143,6 +2156,31 @@ async function refreshPoolStatus() {
 
   btn.disabled = false;
   btn.textContent = '↻ 刷新';
+  if (syncBtn) syncBtn.disabled = false;
+}
+
+async function refreshAndSyncPool() {
+  const btn = document.getElementById('btn-refresh-sync-pool');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '执行中...';
+  }
+
+  switchToLogs();
+  resetLiveLog('等待校验并同步日志...');
+
+  try {
+    await refreshPoolStatus({ preserveLog: true, buttonText: '↻ 校验中...' });
+    appendLog('[Pool] 401 清理完成，开始双向同步...');
+    await doSync({ preserveLog: true, buttonText: '同步中...' });
+  } catch (e) {
+    appendLog('[ERROR] 校验并同步异常: ' + e);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '校验并同步';
+    }
+  }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -2578,17 +2616,20 @@ async function loadSyncStatus() {
   }
 }
 
-async function doSync() {
+async function doSync(options = {}) {
   const { base_url, token, target_type, target_count, proxy } = getPoolConfig();
   if (!base_url || !token) {
     appendLog('[提示] 请先在左栏填写 CliProxyAPI URL 和 Token');
     return;
   }
-  switchToLogs();
-  resetLiveLog('等待本次同步日志...');
+  const preserveLog = options.preserveLog === true;
+  if (!preserveLog) {
+    switchToLogs();
+    resetLiveLog('等待本次同步日志...');
+  }
   const syncBtn = document.getElementById('btn-sync-accounts');
   syncBtn.disabled = true;
-  syncBtn.textContent = '同步中...';
+  syncBtn.textContent = options.buttonText || '同步中...';
   try {
     const r = await fetch('/api/pool/sync', {
       method: 'POST',
