@@ -203,6 +203,60 @@ def _reset_pool_logs() -> None:
         pass
 
 
+def _run_post_stop_reconcile(
+    *,
+    base_url: str,
+    token: str,
+    target_type: str,
+    target_count: int,
+    proxy: str,
+    log_cb,
+) -> Dict[str, Any]:
+    """停止补号后执行一次收尾：校验401、清理并双向同步。"""
+    if not base_url or not token:
+        log_cb("[Pool] 停止后收尾跳过：base_url 或 token 为空")
+        return {"ok": False, "error": "missing base_url/token"}
+
+    cfg = reg.load_config()
+    log_cb("[Pool] 停止补号后开始自动校验 401 并双向同步有效账号...")
+
+    refresh_result = reg.run_pool_refresh_status(
+        base_url=base_url,
+        token=token,
+        target_type=target_type,
+        target_count=target_count,
+        proxy=proxy,
+        log_cb=log_cb,
+        config=cfg,
+    )
+    if not refresh_result.get("ok"):
+        log_cb(f"[Pool] 停止后校验失败: {refresh_result.get('error', '未知错误')}")
+        return refresh_result
+
+    sync_result = reg.sync_local_remote(
+        base_url=base_url,
+        token=token,
+        target_type=target_type,
+        config=cfg,
+        proxy=proxy,
+        log_cb=log_cb,
+        target_count=target_count,
+    )
+    if sync_result.get("ok"):
+        log_cb(
+            f"[Pool] 停止后同步完成: 上传={sync_result.get('uploaded', 0)}, "
+            f"移动={sync_result.get('moved', 0)}, 下载={sync_result.get('downloaded', 0)}"
+        )
+    else:
+        log_cb(f"[Pool] 停止后同步失败: {sync_result.get('error', '未知错误')}")
+
+    return {
+        "ok": bool(sync_result.get("ok")),
+        "refresh": refresh_result,
+        "sync": sync_result,
+    }
+
+
 def _token_fingerprint(token: str) -> str:
     if not token:
         return ""
@@ -545,6 +599,7 @@ async def pool_fill(body: dict = Body(...)):
     progress_cb = _make_shared_reg_progress_cb("manual_fill")
 
     def run_task():
+        stop_requested = False
         try:
             result = reg.run_pool_fill(
                 fill_count=count,
@@ -570,6 +625,19 @@ async def pool_fill(body: dict = Body(...)):
             _set_shared_reg_state(mode="manual_fill", running=False)
             log_cb(f"[ERROR] 补号异常: {e}")
         finally:
+            stop_requested = bool(_pool_state.get("stop_requested"))
+            if stop_requested:
+                try:
+                    _run_post_stop_reconcile(
+                        base_url=base_url,
+                        token=pool_token,
+                        target_type=target_type,
+                        target_count=target_count,
+                        proxy=proxy,
+                        log_cb=log_cb,
+                    )
+                except Exception as reconcile_error:
+                    log_cb(f"[Pool] 停止后自动收尾异常: {reconcile_error}")
             _pool_state["running"] = False
             _pool_state["task"] = ""
             _pool_state["stop_requested"] = False
@@ -977,8 +1045,9 @@ def _run_daemon_once():
     _set_shared_reg_state()
     log_cb = _make_pool_log_cb()
     reg_result: Optional[dict] = None
+    cfg = _normalize_pool_runtime_config(_pool_daemon["config"])
+    stop_requested = False
     try:
-        cfg = _normalize_pool_runtime_config(_pool_daemon["config"])
         proxy = reg._proxy_pool.get_best(cfg["proxy"])
         stop_event = threading.Event()
         _pool_daemon["stop_event"] = stop_event
@@ -996,6 +1065,19 @@ def _run_daemon_once():
     except Exception as e:
         log_cb(f"[Daemon] 执行异常: {e}")
     finally:
+        stop_requested = bool(_pool_daemon.get("stop_requested"))
+        if stop_requested:
+            try:
+                _run_post_stop_reconcile(
+                    base_url=cfg["base_url"],
+                    token=cfg["token"],
+                    target_type=cfg["target_type"],
+                    target_count=cfg["target_count"],
+                    proxy=cfg["proxy"],
+                    log_cb=log_cb,
+                )
+            except Exception as reconcile_error:
+                log_cb(f"[Daemon] 停止后自动收尾异常: {reconcile_error}")
         _finish_shared_reg_state("daemon", reg_result)
         _pool_daemon["running_now"] = False
         _pool_daemon["stop_event"] = None
@@ -1024,7 +1106,7 @@ async def pool_daemon_stop():
 
     _pool_daemon["enabled"] = False
     _pool_daemon["next_run_ts"] = None
-    _pool_daemon["stop_requested"] = False
+    _pool_daemon["stop_requested"] = bool(_pool_daemon.get("running_now"))
     if _pool_daemon_timer and _pool_daemon_timer.is_alive():
         _pool_daemon_timer.cancel()
         _pool_daemon_timer = None

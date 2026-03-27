@@ -1327,6 +1327,7 @@ let _fillSuccessCount = 0;
 let _poolRefreshTimer = null;
 let _poolTaskRunning = false;
 let _poolTaskName = '';
+let _poolTaskWasRunning = false;
 let _daemonRunningNow = false;
 let _poolStopRequested = false;
 let _sharedRegStatsMode = '';
@@ -2394,6 +2395,7 @@ async function pollDaemonStatus() {
     if (_daemonWasRunning && !d.running_now) {
       refreshPoolStatus();
       refreshAccounts();
+      _poolStopRequested = false;
     }
     _daemonWasRunning = d.running_now;
     _updateDaemonUI(d);
@@ -2405,9 +2407,17 @@ async function pollPoolTaskStatus() {
   try {
     const r = await fetch('/api/pool/task-status');
     const d = await r.json();
+    const wasRunning = _poolTaskWasRunning;
     _poolTaskRunning = !!d.running;
     _poolTaskName = d.task || '';
     updateStopPoolButton();
+    if (wasRunning && !_poolTaskRunning && _poolStopRequested) {
+      appendLog('[Pool] 停止后的自动收尾已完成，刷新账号列表和池状态...');
+      await refreshPoolStatus();
+      refreshAccounts();
+      _poolStopRequested = false;
+    }
+    _poolTaskWasRunning = _poolTaskRunning;
     await refreshSharedRegStats();
   } catch {}
 }
