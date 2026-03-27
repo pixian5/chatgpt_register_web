@@ -1264,7 +1264,7 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">28</div>
+          <div class="version-chip">29</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
@@ -2684,25 +2684,7 @@ async function doSync(options = {}) {
     if (e.key === 'Escape') closeSettingsDrawer();
   });
   await loadSettings();
-  await restoreRegOnlyStatus();
-  await refreshSharedRegStats();
-  await initPoolLogCursor(true);
-  connectPoolWs();
-
-  // 初次刷新池状态
-  const { base_url, token } = getPoolConfig();
-  if (base_url && token) {
-    refreshPoolStatus();
-    loadSyncStatus();
-  }
-
-  // 守护进程状态轮询
-  pollDaemonStatus();
-  _daemonPollTimer = setInterval(pollDaemonStatus, 5000);
-  pollPoolTaskStatus();
-  _poolTaskPollTimer = setInterval(pollPoolTaskStatus, 2000);
-  if (_sharedRegStatsPollTimer) clearInterval(_sharedRegStatsPollTimer);
-  _sharedRegStatsPollTimer = setInterval(refreshSharedRegStats, 10000);
+  resetLiveLog('刷新页面后不会自动刷新信息，点击按钮后再获取最新状态');
 })();
 </script>
 </body>
