@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>35</title>
+  <title>36</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1264,7 +1264,7 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">35</div>
+          <div class="version-chip">36</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
@@ -2697,7 +2697,19 @@ async function doSync(options = {}) {
   });
   await loadSettings();
   refreshAccounts();
-  resetLiveLog('刷新页面后会自动刷新账号列表，其它信息需手动获取');
+  await restoreRegOnlyStatus();
+  await refreshSharedRegStats();
+  await initPoolLogCursor(true);
+  connectPoolWs();
+  await pollDaemonStatus();
+  if (_daemonPollTimer) clearInterval(_daemonPollTimer);
+  _daemonPollTimer = setInterval(pollDaemonStatus, 5000);
+  await pollPoolTaskStatus();
+  if (_poolTaskPollTimer) clearInterval(_poolTaskPollTimer);
+  _poolTaskPollTimer = setInterval(pollPoolTaskStatus, 2000);
+  if (_sharedRegStatsPollTimer) clearInterval(_sharedRegStatsPollTimer);
+  _sharedRegStatsPollTimer = setInterval(refreshSharedRegStats, 10000);
+  resetLiveLog('刷新页面后会自动恢复账号同步状态、守护进程状态、任务状态与实时日志连接');
 })();
 </script>
 </body>
