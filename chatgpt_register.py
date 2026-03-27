@@ -788,26 +788,82 @@ def wait_for_verification_email(mail_token: str, timeout: int = 120,
     return None
 
 
+_FIRST_NAMES = [
+    "James", "Emma", "Liam", "Olivia", "Noah", "Ava", "Ethan", "Sophia",
+    "Lucas", "Mia", "Mason", "Isabella", "Logan", "Charlotte", "Alexander",
+    "Amelia", "Benjamin", "Harper", "William", "Evelyn", "Henry", "Abigail",
+    "Sebastian", "Emily", "Jack", "Elizabeth", "Daniel", "Ella", "Michael",
+    "Scarlett", "Samuel", "Grace", "Owen", "Chloe", "Leo", "Hannah",
+    "Julian", "Aria", "Levi", "Nora", "Isaac", "Zoe", "David", "Lily",
+    "Nathan", "Layla", "Wyatt", "Victoria", "Adrian", "Lucy", "Caleb",
+    "Naomi", "Mateo", "Aaliyah", "Ezra", "Stella", "Ryan", "Audrey",
+]
+
+_LAST_NAMES = [
+    "Smith", "Johnson", "Brown", "Davis", "Wilson", "Moore", "Taylor",
+    "Clark", "Hall", "Young", "Anderson", "Thomas", "Jackson", "White",
+    "Harris", "Martin", "Thompson", "Garcia", "Robinson", "Lewis",
+    "Walker", "Allen", "King", "Wright", "Scott", "Green", "Adams",
+    "Baker", "Brooks", "Campbell", "Carter", "Collins", "Cook", "Cox",
+    "Diaz", "Edwards", "Evans", "Foster", "Gomez", "Gray", "Gutierrez",
+    "Henderson", "Howard", "Jenkins", "Kelly", "Long", "Morris", "Murphy",
+    "Ortiz", "Parker", "Perez", "Powell", "Price", "Ramirez", "Reed",
+    "Rivera", "Rogers", "Ross", "Sanders", "Simmons", "Torres", "Ward",
+]
+
+_MIDDLE_PARTS = [
+    "Lee", "Ray", "Jane", "Rose", "Grace", "Anne", "Marie", "Jean",
+    "Blake", "Quinn", "Skye", "Lane", "Kai", "Jude", "Sage", "Drew",
+]
+
+_LAST_PREFIXES = ["Mc", "Mac", "De", "Van", "La", "St."]
+_NAME_SUFFIXES = ["Jr.", "Sr.", "III"]
+
+
 def _random_name():
-    first = random.choice([
-        "James", "Emma", "Liam", "Olivia", "Noah", "Ava", "Ethan", "Sophia",
-        "Lucas", "Mia", "Mason", "Isabella", "Logan", "Charlotte", "Alexander",
-        "Amelia", "Benjamin", "Harper", "William", "Evelyn", "Henry", "Abigail",
-        "Sebastian", "Emily", "Jack", "Elizabeth",
-    ])
-    last = random.choice([
-        "Smith", "Johnson", "Brown", "Davis", "Wilson", "Moore", "Taylor",
-        "Clark", "Hall", "Young", "Anderson", "Thomas", "Jackson", "White",
-        "Harris", "Martin", "Thompson", "Garcia", "Robinson", "Lewis",
-        "Walker", "Allen", "King", "Wright", "Scott", "Green",
-    ])
-    return f"{first} {last}"
+    first = random.choice(_FIRST_NAMES)
+    last = random.choice(_LAST_NAMES)
+    style = random.randint(1, 7)
+
+    if style == 1:
+        return f"{first} {last}"
+    if style == 2:
+        middle = random.choice(_MIDDLE_PARTS)
+        return f"{first} {middle} {last}"
+    if style == 3:
+        middle_initial = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        return f"{first} {middle_initial}. {last}"
+    if style == 4:
+        second_last = random.choice([n for n in _LAST_NAMES if n != last])
+        return f"{first} {last}-{second_last}"
+    if style == 5:
+        prefix = random.choice(_LAST_PREFIXES)
+        return f"{first} {prefix}{last}"
+    if style == 6:
+        suffix = random.choice(_NAME_SUFFIXES)
+        return f"{first} {last} {suffix}"
+    nickname = random.choice(_FIRST_NAMES)
+    return f"{first} {nickname} {last}"
 
 
 def _random_birthdate():
-    y = random.randint(1985, 2002)
+    year_buckets = [
+        (1979, 1985),
+        (1986, 1992),
+        (1993, 1998),
+        (1999, 2003),
+    ]
+    y = random.randint(*random.choice(year_buckets))
     m = random.randint(1, 12)
-    d = random.randint(1, 28)
+    if m == 2:
+        max_day = 29 if y % 4 == 0 else 28
+    elif m in {4, 6, 9, 11}:
+        max_day = 30
+    else:
+        max_day = 31
+    # 轻微避开 1/15/28 这种太常见的脚本化日期
+    preferred_days = [d for d in range(2, max_day + 1) if d not in {15, 28}]
+    d = random.choice(preferred_days or list(range(1, max_day + 1)))
     return f"{y}-{m:02d}-{d:02d}"
 
 
