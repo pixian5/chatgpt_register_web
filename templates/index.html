@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>37</title>
+  <title>38</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1264,7 +1264,7 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">37</div>
+          <div class="version-chip">38</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
@@ -2434,6 +2434,12 @@ function _updateDaemonUI(d) {
   const countdown = document.getElementById('daemon-countdown-row');
   const cntVal   = document.getElementById('countdown-val');
   const runBadge = document.getElementById('daemon-running-badge');
+  const intervalInput = document.getElementById('daemon-interval');
+
+  if (intervalInput && Number(d.interval_min || 0) > 0) {
+    intervalInput.value = String(Number(d.interval_min));
+    _savedConfig.pool_interval_min = Number(d.interval_min);
+  }
 
   if (d.enabled) {
     toggle.classList.add('on');
@@ -2697,15 +2703,17 @@ async function doSync(options = {}) {
   });
   await loadSettings();
   refreshAccounts();
-  await restoreRegOnlyStatus();
-  await refreshSharedRegStats();
-  await initPoolLogCursor(true);
   connectPoolWs();
-  await refreshPoolStatus({ preserveLog: true, buttonText: '↻ 刷新中...' });
-  await pollDaemonStatus();
+  await Promise.allSettled([
+    restoreRegOnlyStatus(),
+    refreshSharedRegStats(),
+    initPoolLogCursor(true),
+    pollDaemonStatus(),
+    pollPoolTaskStatus(),
+    refreshPoolStatus({ preserveLog: true, buttonText: '↻ 刷新中...' }),
+  ]);
   if (_daemonPollTimer) clearInterval(_daemonPollTimer);
   _daemonPollTimer = setInterval(pollDaemonStatus, 5000);
-  await pollPoolTaskStatus();
   if (_poolTaskPollTimer) clearInterval(_poolTaskPollTimer);
   _poolTaskPollTimer = setInterval(pollPoolTaskStatus, 2000);
   if (_sharedRegStatsPollTimer) clearInterval(_sharedRegStatsPollTimer);
