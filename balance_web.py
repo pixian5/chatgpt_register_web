@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
 
-app = FastAPI(title="查余额", version="1.0.9")
+app = FastAPI(title="查余额", version="1.0.10")
 
 BASE_DIR = Path(__file__).resolve().parent
 HTML_FILE = BASE_DIR / "查余额.html"
