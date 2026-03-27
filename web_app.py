@@ -34,7 +34,7 @@ import register as reg
 # 应用初始化
 # ============================================================
 
-app = FastAPI(title="pam管理 Web UI", version="1.0.5")
+app = FastAPI(title="pam管理 Web UI", version="1.0.8")
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,6 +46,7 @@ app.add_middleware(
 
 _BASE_DIR = Path(__file__).resolve().parent
 _TEMPLATES_DIR = _BASE_DIR / "templates"
+_ENV_FILE = _BASE_DIR / ".env"
 
 # ============================================================
 # 全局任务状态
@@ -983,6 +984,32 @@ def _persist_pool_interval(interval_min: int):
     reg.save_config(cfg)
 
 
+def _persist_pool_interval_env(interval_min: int):
+    os.environ["POOL_INTERVAL_MIN"] = str(max(1, int(interval_min)))
+    if not _ENV_FILE.exists():
+        return
+    try:
+        lines = _ENV_FILE.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return
+
+    target = f"POOL_INTERVAL_MIN={max(1, int(interval_min))}"
+    updated = []
+    replaced = False
+    for line in lines:
+        if line.strip().startswith("POOL_INTERVAL_MIN="):
+            updated.append(target)
+            replaced = True
+        else:
+            updated.append(line)
+    if not replaced:
+        updated.append(target)
+    try:
+        _ENV_FILE.write_text("\n".join(updated).rstrip() + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _reschedule_pool_daemon_timer():
     global _pool_daemon_timer
 
@@ -1098,6 +1125,17 @@ async def pool_daemon_start(body: dict = Body(...)):
     interval_min = _start_pool_daemon(daemon_body)
     _persist_pool_interval(interval_min)
     return {"ok": True, "interval_min": interval_min}
+
+
+@app.post("/api/pool/daemon/interval")
+async def pool_daemon_interval_save(body: dict = Body(...)):
+    interval_min = _to_int(body.get("interval_min"), _pool_daemon["interval_min"], minimum=1)
+    _pool_daemon["interval_min"] = interval_min
+    _persist_pool_interval(interval_min)
+    _persist_pool_interval_env(interval_min)
+    if _pool_daemon["enabled"]:
+        _reschedule_pool_daemon_timer()
+    return {"ok": True, "interval_min": interval_min, "enabled": bool(_pool_daemon["enabled"])}
 
 
 @app.post("/api/pool/daemon/stop")

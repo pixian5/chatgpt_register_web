@@ -72,8 +72,10 @@ def load_runtime_config(defaults: dict, base_dir: str | Path) -> dict:
     load_dotenv_files(root)
 
     merged = copy.deepcopy(defaults)
-    for filename in ("config.json", "config.local.json"):
-        _deep_merge_dict(merged, _load_json_if_exists(root / filename))
+    config_json = _load_json_if_exists(root / "config.json")
+    local_json = _load_json_if_exists(root / "config.local.json")
+    _deep_merge_dict(merged, config_json)
+    _deep_merge_dict(merged, local_json)
 
     env = os.environ
     merged["duckmail_api_base"] = env.get("DUCKMAIL_API_BASE", merged.get("duckmail_api_base", ""))
@@ -108,7 +110,11 @@ def load_runtime_config(defaults: dict, base_dir: str | Path) -> dict:
     pool["proxy"] = env.get("POOL_PROXY", pool.get("proxy", ""))
     pool["probe_workers"] = _parse_int(env.get("POOL_PROBE_WORKERS"), int(pool.get("probe_workers", 20) or 20))
     pool["delete_workers"] = _parse_int(env.get("POOL_DELETE_WORKERS"), int(pool.get("delete_workers", 10) or 10))
-    pool["interval_min"] = _parse_int(env.get("POOL_INTERVAL_MIN"), int(pool.get("interval_min", 1) or 1))
+    local_pool = local_json.get("pool", {}) if isinstance(local_json.get("pool"), dict) else {}
+    if "interval_min" in local_pool:
+        pool["interval_min"] = _parse_int(local_pool.get("interval_min"), int(pool.get("interval_min", 1) or 1))
+    else:
+        pool["interval_min"] = _parse_int(env.get("POOL_INTERVAL_MIN"), int(pool.get("interval_min", 1) or 1))
     merged["pool"] = pool
     return merged
 

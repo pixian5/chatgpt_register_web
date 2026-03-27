@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>31</title>
+  <title>35</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1264,7 +1264,7 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">32</div>
+          <div class="version-chip">35</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
@@ -1954,20 +1954,22 @@ async function saveDaemonIntervalSetting() {
       clearTimeout(_daemonIntervalSaveTimer);
       _daemonIntervalSaveTimer = null;
     }
-    const r = await fetch('/api/config');
-    const cfg = await r.json();
-    cfg.pool = cfg.pool || {};
-    cfg.pool.interval_min = intervalMin;
-    const saveResp = await fetch('/api/config', {
+    const saveResp = await fetch('/api/pool/daemon/interval', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(cfg),
+      body: JSON.stringify({ interval_min: intervalMin }),
     });
-    if (!saveResp.ok) return;
-    _syncSavedConfig(cfg);
+    const data = await saveResp.json().catch(() => ({}));
+    if (!saveResp.ok || !data.ok) {
+      appendLog('[守护进程] 间隔保存失败');
+      return;
+    }
+    _savedConfig.pool_interval_min = Number(data.interval_min || intervalMin);
+    _setVal('daemon-interval', _savedConfig.pool_interval_min);
+    appendLog(`[守护进程] 时间间隔已保存: ${_savedConfig.pool_interval_min} 分钟`);
     await pollDaemonStatus();
   } catch (e) {
-    console.warn('保存守护进程间隔失败', e);
+    appendLog('[守护进程] 间隔保存失败: ' + e);
   }
 }
 
