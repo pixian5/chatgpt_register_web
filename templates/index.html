@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>27</title>
+  <title>31</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1264,7 +1264,7 @@ input:focus, select:focus {
       <div class="card-header">
         <div class="panel-card-head">
           <div class="card-title">账号 & 日志</div>
-          <div class="version-chip">29</div>
+          <div class="version-chip">31</div>
         </div>
         <div class="panel-topbar">
           <div class="toolbar-actions active" data-toolbar="accounts">
@@ -2684,7 +2684,8 @@ async function doSync(options = {}) {
     if (e.key === 'Escape') closeSettingsDrawer();
   });
   await loadSettings();
-  resetLiveLog('刷新页面后不会自动刷新信息，点击按钮后再获取最新状态');
+  refreshAccounts();
+  resetLiveLog('刷新页面后会自动刷新账号列表，其它信息需手动获取');
 })();
 </script>
 </body>
