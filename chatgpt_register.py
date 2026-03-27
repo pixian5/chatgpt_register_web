@@ -838,6 +838,65 @@ class RegistrationDisallowedError(RegistrationFlowError):
     """当前资料或环境不允许完成注册。"""
 
 
+class StopRequestedError(RegistrationFlowError):
+    """外部请求停止当前注册任务。"""
+
+
+class TemporaryRegistrationError(RegistrationFlowError):
+    """大概率由风控、网络抖动或上游暂态异常导致的可重试错误。"""
+
+
+def _is_retryable_register_error_message(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+
+    fatal_markers = (
+        "已停止",
+        "[stop]",
+        "收到停止请求",
+    )
+    if any(marker in text for marker in fatal_markers):
+        return False
+
+    retryable_markers = (
+        "duckmail 创建邮箱失败",
+        "创建邮箱失败",
+        "获取邮件 token 失败",
+        "首页访问失败",
+        "获取 csrf 失败",
+        "signin 失败",
+        "failed to get authorize url",
+        "register 失败",
+        "验证码失败",
+        "未能获取验证码",
+        "重试后仍未获取验证码",
+        "otp",
+        "oauth 获取失败",
+        "token 交换失败",
+        "响应解析失败",
+        "响应缺少",
+        "invalid_auth_step",
+        "workspace/select 失败",
+        "organization/select",
+        "sentinel token 获取失败",
+        "timed out",
+        "timeout",
+        "connection",
+        "network",
+        "proxy",
+        "temporarily",
+        "too many requests",
+        "429",
+        "5xx",
+        "502",
+        "503",
+        "504",
+        "403",
+    )
+    return any(marker in text for marker in retryable_markers)
+
+
 class ChatGPTRegister:
     BASE = "https://chatgpt.com"
     AUTH = "https://auth.openai.com"
@@ -899,7 +958,7 @@ class ChatGPTRegister:
     def _raise_if_stopped(self):
         if self._is_stopped():
             self._print("[STOP] 收到停止请求")
-            raise Exception("已停止")
+            raise StopRequestedError("已停止")
 
     def _sleep_with_stop(self, seconds: float, step: float = 0.2):
         deadline = time.time() + max(0.0, seconds)
@@ -1324,7 +1383,13 @@ class ChatGPTRegister:
             # 使用 DuckMail 等待验证码
             otp_code = self.wait_for_verification_email(mail_token, since_ts=otp_since)
             if not otp_code:
-                raise Exception("未能获取验证码")
+                self._print("[OTP] 首次未获取验证码，尝试重新发送一次...")
+                self.send_otp()
+                otp_since = time.time() - 2
+                self._sleep_with_stop(random.uniform(1.0, 2.0))
+                otp_code = self.wait_for_verification_email(mail_token, timeout=60, since_ts=otp_since)
+                if not otp_code:
+                    raise TemporaryRegistrationError("重试后仍未获取验证码")
 
             self._sleep_with_stop(random.uniform(0.3, 0.8))
             status, data = self.validate_otp(otp_code)
@@ -1335,11 +1400,11 @@ class ChatGPTRegister:
                 self._sleep_with_stop(random.uniform(1.0, 2.0))
                 otp_code = self.wait_for_verification_email(mail_token, timeout=60, since_ts=otp_since)
                 if not otp_code:
-                    raise Exception("重试后仍未获取验证码")
+                    raise TemporaryRegistrationError("重试后仍未获取验证码")
                 self._sleep_with_stop(random.uniform(0.3, 0.8))
                 status, data = self.validate_otp(otp_code)
                 if status != 200:
-                    raise Exception(f"验证码失败 ({status}): {data}")
+                    raise TemporaryRegistrationError(f"验证码失败 ({status}): {data}")
 
         self._sleep_with_stop(random.uniform(0.5, 1.5))
         status, data = self._create_account_with_retry(name, birthdate)
@@ -2036,13 +2101,26 @@ def _register_one(idx, total, proxy, output_file, stop_event=None):
                     print(f"\n[OK] [{tag}] {email} 注册成功!")
                 return True, email, token_path, None
 
-            except (HomepageBlockedError, CsrfFetchError, RegistrationDisallowedError) as e:
+            except StopRequestedError:
+                raise
+            except (HomepageBlockedError, CsrfFetchError, RegistrationDisallowedError, TemporaryRegistrationError) as e:
                 last_retryable_error = str(e)
                 reg._print(f"[注册] 当前整轮尝试失败: {last_retryable_error}")
                 if attempt >= max_register_attempts:
                     raise Exception(last_retryable_error)
                 reg._print("[注册] 准备更换邮箱并重新开始整轮注册...")
                 reg._sleep_with_stop(random.uniform(1.0, 2.0))
+            except Exception as e:
+                error_text = str(e)
+                if isinstance(e, StopRequestedError):
+                    raise
+                if attempt < max_register_attempts and _is_retryable_register_error_message(error_text):
+                    last_retryable_error = error_text
+                    reg._print(f"[注册] 当前整轮尝试失败: {last_retryable_error}")
+                    reg._print("[注册] 识别为临时失败，准备更换邮箱并重新开始整轮注册...")
+                    reg._sleep_with_stop(random.uniform(1.0, 2.0))
+                    continue
+                raise
 
     except Exception as e:
         error_msg = str(e)
