@@ -34,7 +34,7 @@ import register as reg
 # 应用初始化
 # ============================================================
 
-app = FastAPI(title="pam管理 Web UI", version="1.0.4")
+app = FastAPI(title="pam管理 Web UI", version="1.0.5")
 
 app.add_middleware(
     CORSMiddleware,
