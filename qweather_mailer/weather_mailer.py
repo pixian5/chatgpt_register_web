@@ -76,7 +76,7 @@ def lookup_location(api_host: str, token: str, location_query: str, lang: str) -
 def fetch_forecast(api_host: str, token: str, location_id: str, lang: str, unit: str) -> list[dict[str, Any]]:
     data = request_json(
         api_host,
-        "/v7/weather/3d",
+        "/v7/weather/7d",
         token,
         {"location": location_id, "lang": lang, "unit": unit},
     )
@@ -87,25 +87,35 @@ def fetch_forecast(api_host: str, token: str, location_id: str, lang: str, unit:
 
 
 def format_push(city_name: str, adm1: str, country: str, days: list[dict[str, Any]]) -> tuple[str, str]:
-    now_text = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
     title = f"{city_name}未来3天天气"
-    lines = [
-        f"发送时间：{now_text}（北京时间）",
-        f"城市：{country} {adm1} {city_name}",
-        "",
-    ]
+    lines = []
+    weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    today_date = datetime.now(TZ).date()
     for item in days:
-        lines.extend(
-            [
-                f"日期：{item.get('fxDate', '-')}",
-                f"白天天气：{item.get('textDay', '-')}",
-                f"夜间天气：{item.get('textNight', '-')}",
-                f"温度：{item.get('tempMin', '-')} ~ {item.get('tempMax', '-')}°C",
-                f"风向/风力：{item.get('windDirDay', '-')} / {item.get('windScaleDay', '-')}",
-                f"降水概率：{item.get('precip', '-')}",
-                f"湿度：{item.get('humidity', '-')}",
-                "-" * 24,
-            ]
+        fx_date = item.get("fxDate", "-")
+        label = fx_date
+        try:
+            parsed = datetime.strptime(fx_date, "%Y-%m-%d").date()
+            md = f"{parsed.month}.{parsed.day}"
+            if parsed == today_date:
+                prefix = "今天"
+            elif parsed == today_date + timedelta(days=1):
+                prefix = "明天"
+            elif parsed == today_date + timedelta(days=2):
+                prefix = "后天"
+            else:
+                prefix = weekday_names[parsed.weekday()]
+            label = f"{prefix}{md}"
+        except ValueError:
+            pass
+
+        text_day = item.get("textDay", "-")
+        text_night = item.get("textNight", "-")
+        temp_min = item.get("tempMin", "-")
+        temp_max = item.get("tempMax", "-")
+        precip = item.get("precip", "-")
+        lines.append(
+            f"{label} {text_day}-{text_night} {temp_min} -{temp_max}度 降水概率：{precip}"
         )
     return title, "\n".join(lines).rstrip()
 
