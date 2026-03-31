@@ -112,7 +112,7 @@ def format_push(city_name: str, adm1: str, country: str, days: list[dict[str, An
 
 def send_bark(title: str, body: str) -> None:
     bark_base_url = require_env("BARK_BASE_URL").rstrip("/")
-    url = f"{bark_base_url}/{quote(title)}/{quote(body)}"
+    url = f"{bark_base_url}/{quote(title, safe='')}/{quote(body, safe='')}"
     print(f"准备发送 Bark 推送: {title}")
     response = requests.get(url, timeout=30)
     response.raise_for_status()
