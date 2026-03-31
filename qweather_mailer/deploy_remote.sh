@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REMOTE_DIR="${REMOTE_DIR:-/root/c/qweather_mailer}"
-SERVICE_NAME="${SERVICE_NAME:-qweather-mailer}"
+SERVICE_NAME="${SERVICE_NAME:-qweather-mailer.service}"
 TIMER_NAME="${TIMER_NAME:-qweather-mailer.timer}"
 ENABLE_TIMER="${ENABLE_TIMER:-false}"
 
@@ -14,7 +14,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -U pip
 .venv/bin/python -m pip install -r requirements.txt
 
-cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
+cat > "/etc/systemd/system/${SERVICE_NAME}" <<EOF
 [Unit]
 Description=QWeather daily mail sender
 After=network-online.target
@@ -34,7 +34,7 @@ Description=Run QWeather mailer every day at 00:00 Asia/Shanghai
 [Timer]
 OnCalendar=*-*-* 00:00:00
 Persistent=true
-Unit=${SERVICE_NAME}.service
+Unit=${SERVICE_NAME}
 
 [Install]
 WantedBy=timers.target
