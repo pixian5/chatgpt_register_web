@@ -18,3 +18,5 @@ server_tokens
 .env
 .env.local
 config.local.json
+qweather_mailer/.env
+qweather_mailer/private_key.pem
