@@ -87,7 +87,6 @@ def fetch_forecast(api_host: str, token: str, location_id: str, lang: str, unit:
 
 
 def format_push(city_name: str, adm1: str, country: str, days: list[dict[str, Any]]) -> tuple[str, str]:
-    title = f"{city_name}未来3天天气"
     lines = []
     weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     today_date = datetime.now(TZ).date()
@@ -117,7 +116,11 @@ def format_push(city_name: str, adm1: str, country: str, days: list[dict[str, An
         lines.append(
             f"{label} {text_day}-{text_night} {temp_min} -{temp_max}度 降水概率：{precip}"
         )
-    return title, "\n".join(lines).rstrip()
+    if not lines:
+        return city_name, ""
+    title = lines[0]
+    body = "\n".join(lines[1:]).rstrip()
+    return title, body
 
 
 def send_bark(title: str, body: str) -> None:
