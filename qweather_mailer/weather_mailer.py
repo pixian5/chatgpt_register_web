@@ -2,14 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-import socket
-import smtplib
-import ssl
 from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 import jwt
 import requests
@@ -17,33 +13,6 @@ from zoneinfo import ZoneInfo
 
 
 TZ = ZoneInfo("Asia/Shanghai")
-
-
-class IPv4SMTP_SSL(smtplib.SMTP_SSL):
-    def _get_socket(self, host: str, port: int, timeout: float):
-        last_error: OSError | None = None
-        for family, socktype, proto, _, sockaddr in socket.getaddrinfo(
-            host,
-            port,
-            family=socket.AF_INET,
-            type=socket.SOCK_STREAM,
-        ):
-            raw_sock = None
-            try:
-                raw_sock = socket.socket(family, socktype, proto)
-                if timeout is not None:
-                    raw_sock.settimeout(timeout)
-                if self.source_address:
-                    raw_sock.bind(self.source_address)
-                raw_sock.connect(sockaddr)
-                return self.context.wrap_socket(raw_sock, server_hostname=host)
-            except OSError as exc:
-                last_error = exc
-                if raw_sock is not None:
-                    raw_sock.close()
-        if last_error is not None:
-            raise last_error
-        raise OSError(f"无法建立到 {host}:{port} 的 IPv4 SMTP 连接")
 
 
 def load_env_file(env_path: Path) -> None:
@@ -117,9 +86,9 @@ def fetch_forecast(api_host: str, token: str, location_id: str, lang: str, unit:
     return daily[:3]
 
 
-def format_mail(city_name: str, adm1: str, country: str, days: list[dict[str, Any]]) -> tuple[str, str]:
+def format_push(city_name: str, adm1: str, country: str, days: list[dict[str, Any]]) -> tuple[str, str]:
     now_text = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
-    subject = f"{city_name}未来3天天气预报 {datetime.now(TZ).strftime('%Y-%m-%d')}"
+    title = f"{city_name}未来3天天气"
     lines = [
         f"发送时间：{now_text}（北京时间）",
         f"城市：{country} {adm1} {city_name}",
@@ -138,30 +107,16 @@ def format_mail(city_name: str, adm1: str, country: str, days: list[dict[str, An
                 "-" * 24,
             ]
         )
-    return subject, "\n".join(lines).rstrip()
+    return title, "\n".join(lines).rstrip()
 
 
-def send_mail(subject: str, body: str) -> None:
-    smtp_host = require_env("SMTP_HOST")
-    smtp_port = int(os.environ.get("SMTP_PORT", "465"))
-    smtp_user = require_env("SMTP_USER")
-    smtp_password = require_env("SMTP_PASSWORD")
-    email_from = require_env("EMAIL_FROM")
-    email_to = require_env("EMAIL_TO")
-
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = email_from
-    msg["To"] = email_to
-    msg.set_content(body)
-
-    context = ssl.create_default_context()
-    print(f"准备连接 SMTP: {smtp_host}:{smtp_port}")
-    with IPv4SMTP_SSL(smtp_host, smtp_port, context=context, timeout=30) as server:
-        server.ehlo()
-        server.login(smtp_user, smtp_password)
-        server.send_message(msg)
-    print("邮件发送完成")
+def send_bark(title: str, body: str) -> None:
+    bark_base_url = require_env("BARK_BASE_URL").rstrip("/")
+    url = f"{bark_base_url}/{quote(title)}/{quote(body)}"
+    print(f"准备发送 Bark 推送: {title}")
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    print(f"Bark 推送完成: {response.text}")
 
 
 def main() -> None:
@@ -186,14 +141,14 @@ def main() -> None:
     location = lookup_location(api_host, token, location_query, lang)
     print(f"城市查询完成: {location.get('name', location_query)} / {location.get('id', '-')}")
     daily = fetch_forecast(api_host, token, location["id"], lang, unit)
-    print("天气查询完成，开始组织邮件")
-    subject, body = format_mail(
+    print("天气查询完成，开始组织推送")
+    title, body = format_push(
         city_name=location.get("name", location_query),
         adm1=location.get("adm1", ""),
         country=location.get("country", ""),
         days=daily,
     )
-    send_mail(subject, body)
+    send_bark(title, body)
 
 
 if __name__ == "__main__":
