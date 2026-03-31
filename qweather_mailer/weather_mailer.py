@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import smtplib
 import ssl
 from datetime import datetime, timedelta, timezone
@@ -16,6 +17,33 @@ from zoneinfo import ZoneInfo
 
 
 TZ = ZoneInfo("Asia/Shanghai")
+
+
+class IPv4SMTP_SSL(smtplib.SMTP_SSL):
+    def _get_socket(self, host: str, port: int, timeout: float):
+        last_error: OSError | None = None
+        for family, socktype, proto, _, sockaddr in socket.getaddrinfo(
+            host,
+            port,
+            family=socket.AF_INET,
+            type=socket.SOCK_STREAM,
+        ):
+            raw_sock = None
+            try:
+                raw_sock = socket.socket(family, socktype, proto)
+                if timeout is not None:
+                    raw_sock.settimeout(timeout)
+                if self.source_address:
+                    raw_sock.bind(self.source_address)
+                raw_sock.connect(sockaddr)
+                return self.context.wrap_socket(raw_sock, server_hostname=host)
+            except OSError as exc:
+                last_error = exc
+                if raw_sock is not None:
+                    raw_sock.close()
+        if last_error is not None:
+            raise last_error
+        raise OSError(f"无法建立到 {host}:{port} 的 IPv4 SMTP 连接")
 
 
 def load_env_file(env_path: Path) -> None:
@@ -129,7 +157,7 @@ def send_mail(subject: str, body: str) -> None:
 
     context = ssl.create_default_context()
     print(f"准备连接 SMTP: {smtp_host}:{smtp_port}")
-    with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=30) as server:
+    with IPv4SMTP_SSL(smtp_host, smtp_port, context=context, timeout=30) as server:
         server.ehlo()
         server.login(smtp_user, smtp_password)
         server.send_message(msg)
