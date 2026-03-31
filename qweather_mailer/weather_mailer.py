@@ -128,9 +128,12 @@ def send_mail(subject: str, body: str) -> None:
     msg.set_content(body)
 
     context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context) as server:
+    print(f"准备连接 SMTP: {smtp_host}:{smtp_port}")
+    with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=30) as server:
+        server.ehlo()
         server.login(smtp_user, smtp_password)
         server.send_message(msg)
+    print("邮件发送完成")
 
 
 def main() -> None:
@@ -149,9 +152,13 @@ def main() -> None:
         private_key_path = base_dir / private_key_path
     private_key = private_key_path.read_text(encoding="utf-8")
 
+    print("开始生成 JWT")
     token = build_jwt_token(project_id, credential_id, private_key)
+    print(f"开始查询城市: {location_query}")
     location = lookup_location(api_host, token, location_query, lang)
+    print(f"城市查询完成: {location.get('name', location_query)} / {location.get('id', '-')}")
     daily = fetch_forecast(api_host, token, location["id"], lang, unit)
+    print("天气查询完成，开始组织邮件")
     subject, body = format_mail(
         city_name=location.get("name", location_query),
         adm1=location.get("adm1", ""),
@@ -159,7 +166,6 @@ def main() -> None:
         days=daily,
     )
     send_mail(subject, body)
-    print("邮件发送完成")
 
 
 if __name__ == "__main__":
