@@ -32,7 +32,7 @@ cat > "/etc/systemd/system/${TIMER_NAME}" <<EOF
 Description=Run QWeather mailer every day at 00:00 Asia/Shanghai
 
 [Timer]
-OnCalendar=Asia/Shanghai *-*-* 00:00:00
+OnCalendar=*-*-* 00:00:00
 Persistent=true
 Unit=${SERVICE_NAME}
 
