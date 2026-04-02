@@ -4,7 +4,7 @@ set -euo pipefail
 REMOTE_DIR="${REMOTE_DIR:-/root/c/qweather_mailer}"
 SERVICE_NAME="${SERVICE_NAME:-qweather-mailer.service}"
 TIMER_NAME="${TIMER_NAME:-qweather-mailer.timer}"
-ENABLE_TIMER="${ENABLE_TIMER:-false}"
+ENABLE_TIMER="${ENABLE_TIMER:-true}"
 
 mkdir -p "$REMOTE_DIR"
 cd "$REMOTE_DIR"
@@ -32,7 +32,7 @@ cat > "/etc/systemd/system/${TIMER_NAME}" <<EOF
 Description=Run QWeather mailer every day at 00:00 Asia/Shanghai
 
 [Timer]
-OnCalendar=*-*-* 00:00:00
+OnCalendar=Asia/Shanghai *-*-* 00:00:00
 Persistent=true
 Unit=${SERVICE_NAME}
 
