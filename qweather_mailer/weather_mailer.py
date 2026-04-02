@@ -112,10 +112,7 @@ def format_push(city_name: str, adm1: str, country: str, days: list[dict[str, An
         text_night = item.get("textNight", "-")
         temp_min = item.get("tempMin", "-")
         temp_max = item.get("tempMax", "-")
-        precip = item.get("precip", "-")
-        lines.append(
-            f"{label} {text_day}-{text_night} {temp_min} -{temp_max}度 降水概率：{precip}"
-        )
+        lines.append(f"{label} {text_day}-{text_night} {temp_min} - {temp_max}度")
     if not lines:
         return city_name, ""
     title = lines[0]
