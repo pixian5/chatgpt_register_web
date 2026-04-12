@@ -13,6 +13,9 @@ uvicorn.log
 
 codex_tokens
 server_tokens
+ak.txt
+rk.txt
+registered_accounts.txt
 
 *.zip
 .env

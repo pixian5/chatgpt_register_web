@@ -1,7 +1,7 @@
 {
   "clean": {
     "base_url": "https://rayai.zeabur.app",
-    "token": "REDACTED_TOKEN",
+    "token": "",
     "target_type": "codex",
     "workers": 20,
     "delete_workers": 20,

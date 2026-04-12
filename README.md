@@ -191,6 +191,14 @@ config.local.json
 - `config.example.json`
 - `.env.example`
 
+以下运行产物已经改为只在本地/服务器生成，不再提交到仓库：
+
+- `ak.txt`
+- `rk.txt`
+- `registered_accounts.txt`
+- `codex_tokens/`
+- `server_tokens/`
+
 另外，Web UI 返回配置时会对 secret 做掩码处理，避免前端直接拿到完整明文。
 
 ## GitHub 自动部署
